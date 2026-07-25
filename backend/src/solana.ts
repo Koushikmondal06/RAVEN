@@ -115,6 +115,23 @@ function payer() {
   return payerPromise;
 }
 
+/**
+ * Parses PLATFORM_PRIVATE_KEY at startup and returns why it can't be used, or null when it is fine.
+ *
+ * Without this the failure is invisible: payoutSol throws per lease, endLease catches it, and every
+ * contributor is silently recorded as unpaid. A hex-encoded key (base58 has no `0`) or a 32-byte key
+ * (Solana secret keys are 64) both fail this way.
+ */
+export async function payoutKeyProblem(): Promise<string | null> {
+  if (!process.env.PLATFORM_PRIVATE_KEY) return 'unset — payouts will be recorded as unpaid (txid null)';
+  try {
+    const signer = await payer()!;
+    return signer ? null : 'could not be loaded';
+  } catch (e) {
+    return `${(e as Error).message.split('\n')[0]} — expected a base58 secret key or a solana-keygen JSON array of 64 bytes`;
+  }
+}
+
 /** Settles a contributor's earnings. Returns the txid, or null when no platform key is configured. */
 export async function payoutSol(to: string, amount: bigint): Promise<string | null> {
   const signerPromise = payer();

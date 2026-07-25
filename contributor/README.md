@@ -20,8 +20,8 @@ Your node appears in the marketplace's Explore table within ~10 seconds. Get the
 
 > ### Read this before you run it
 >
-> Each lease is a hardened Docker container — no host filesystem, all capabilities dropped, read-only
-> root, `no-new-privileges`, capped CPU/RAM/PIDs — but it **shares your host's kernel**. A kernel
+> Each lease is a hardened Docker container — no host filesystem, `no-new-privileges`, capped
+> CPU/RAM/PIDs — but it **shares your host's kernel**. A kernel
 > exploit from inside a lease lands on your machine. The daemon also mounts the Docker socket so it
 > can start those containers, which is equivalent to giving it root on the host.
 >
@@ -125,8 +125,9 @@ can reach a live lease, and that the sandbox is the only thing protecting your h
 
 - **The daemon holds no wallet** — only the `RAVEN_KEY` bearer. Payouts are signed server-side by the
   registry, never on this box.
-- **The lease is contained by Docker, and only by Docker**: no host filesystem mounted, `--cap-drop=ALL`,
-  `--read-only` root with `noexec,nosuid` scratch tmpfs, `no-new-privileges`, capped CPU/RAM/PIDs.
+- **The lease is contained by Docker, and only by Docker**: no host filesystem mounted,
+  `no-new-privileges`, capped CPU/RAM/PIDs. (`--cap-drop=ALL` and `--read-only` are not used: the
+  sandbox writes sshd's host keys and the root password at boot, so either flag kills the lease.)
   The kernel is shared with your host — that is the boundary's ceiling, and it is why you should not
   run this on a machine that matters to you.
 - **Credentials are per lease** — the injected key or password dies with the container, so one

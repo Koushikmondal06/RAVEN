@@ -80,10 +80,12 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
     '--memory', `${spec.memMib}m`,
     '--pids-limit', '512',
     '--security-opt', 'no-new-privileges',
-    '--cap-drop=ALL',
-    '--read-only',
-    '--tmpfs', '/tmp:rw,noexec,nosuid,size=256m',
-    '--tmpfs', '/run:rw,noexec,nosuid,size=16m',
+    // No --read-only and no --cap-drop=ALL, deliberately. This image configures SSH at boot:
+    // start.sh runs `ssh-keygen -A` (writes /etc/ssh), `chpasswd` (writes /etc/shadow) and `sed -i`
+    // on sshd_config, and sshd's privilege separation needs SETUID/SETGID. Under either flag those
+    // fail, `set -e` kills the entrypoint, and the lease dies the moment a buyer connects — the
+    // tunnel stays up, so it looks like "Connection closed by <bore ip>" rather than a crash.
+    // Re-adding them means baking host keys into the image and moving to key-only auth first.
     ...sandboxEnv(spec),
     cfg.image,
   ]);

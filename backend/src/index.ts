@@ -34,7 +34,7 @@ import {
   setUserRole,
   takeNonce,
 } from './db.js';
-import { DepositNotConfirmedError, PLATFORM_PAYTO, confirmDeposit, payoutSol } from './solana.js';
+import { DepositNotConfirmedError, PLATFORM_PAYTO, confirmDeposit, payoutKeyProblem, payoutSol } from './solana.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
 const METER_INTERVAL_MS = Number(process.env.METER_INTERVAL_MS ?? 10_000);
@@ -423,6 +423,19 @@ if (!REQUIRE_SSH_KEY) {
     'NOTE: keyless leases use the buyer\'s wallet address as the root password. That address is ' +
       'public, so anyone who knows it can SSH into a live lease. Set REQUIRE_SSH_KEY=true to demand ' +
       'a buyer-supplied public key instead.',
+  );
+}
+
+// Fail loudly at boot on the two settings whose breakage is otherwise invisible: a bad payout key
+// silently marks every contributor unpaid, and a weak session secret lets anyone mint a JWT for any
+// wallet and spend that balance.
+const keyProblem = await payoutKeyProblem();
+if (keyProblem) console.warn(`WARNING: PLATFORM_PRIVATE_KEY ${keyProblem}`);
+if ((process.env.SESSION_SECRET ?? '').length < 32) {
+  console.warn(
+    `WARNING: SESSION_SECRET is ${(process.env.SESSION_SECRET ?? '').length} chars — a short secret is ` +
+      'brute-forceable, and forging a JWT means spending any user\'s balance. Use 32+ random bytes ' +
+      '(openssl rand -hex 32).',
   );
 }
 

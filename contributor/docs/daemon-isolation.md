@@ -3,8 +3,9 @@
 Two different boundaries get confused easily, so state them separately:
 
 - **What contains the buyer:** one Docker container per lease — no host filesystem mounted,
-  `--cap-drop=ALL`, `--read-only` root with `noexec,nosuid` scratch tmpfs, `no-new-privileges`, capped
-  CPU/RAM/PIDs, key-only SSH, hard self-destruct TTL. It **shares your kernel**. Container escapes via
+  `no-new-privileges`, capped CPU/RAM/PIDs, hard self-destruct TTL. It **shares your kernel**.
+  (`--cap-drop=ALL` / `--read-only` would be better, but the image configures sshd at boot and sshd
+  needs SETUID/SETGID for privsep, so both break the lease until host keys are baked in.) Container escapes via
   kernel bugs are a real, recurring class; this boundary is the ceiling of what a shared-kernel
   sandbox can offer.
 - **What contains the daemon:** the host, and not much else. Whether it runs natively or as the

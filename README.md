@@ -70,9 +70,11 @@ the host's Docker socket and reachable over an outbound [bore](https://github.co
 tunnel to the operator's own relay (the `bore` compose service) — no inbound ports on the
 contributor's side, and no third-party relay in the path.
 
-It is hardened as far as a container goes: no host filesystem mounted, `--cap-drop=ALL`,
-`--read-only` root with `noexec,nosuid` scratch tmpfs, `--security-opt no-new-privileges`, capped
-CPU/RAM/PIDs, key-only SSH, and a hard self-destruct TTL.
+It is hardened as far as this image allows: no host filesystem mounted, `--security-opt
+no-new-privileges`, capped CPU/RAM/PIDs, and a hard self-destruct TTL. `--cap-drop=ALL` and a
+`--read-only` root are *not* used — the sandbox configures sshd at boot (host keys, the root
+password, `sshd_config`) and sshd's privsep needs SETUID/SETGID, so either flag kills the lease on
+first connect. Getting them back means baking host keys into the image and dropping password auth.
 
 **It shares the contributor's kernel.** That is the boundary's ceiling: a kernel escape from inside a
 lease lands on the host, and the daemon's Docker-socket mount is itself host root. Contributors should
@@ -238,8 +240,7 @@ accounts).
   data. A buyer who sends an `sshPublicKey` gets key-only auth instead (the agent in `example-buyer/`
   always does), and `REQUIRE_SSH_KEY=true` on the registry makes that mandatory for everyone.
 - **Isolation is a hardened container, and nothing stronger** (see [The sandbox](#the-sandbox)): no
-  host filesystem, `--cap-drop=ALL`, read-only root with `noexec,nosuid` scratch tmpfs,
-  `no-new-privileges`, capped CPU/RAM/PIDs, key-only SSH. The kernel is **shared with the contributor's
+  host filesystem, `no-new-privileges`, capped CPU/RAM/PIDs. The kernel is **shared with the contributor's
   host**, so a kernel escape from a lease reaches that host, and the daemon's Docker-socket access is
   host root in its own right. A contributor box should be dedicated and disposable
   (see [contributor/docs/daemon-isolation.md](contributor/docs/daemon-isolation.md)). Egress from a
