@@ -1,10 +1,11 @@
 'use client';
 
-import { useSelectedWalletAccount, useSignMessage } from '@solana/react';
 import { getBase58Decoder } from '@solana/kit';
+import { useSelectedWalletAccount, useSignMessage } from '@solana/react';
 import type { UiWallet, UiWalletAccount } from '@wallet-standard/react';
 import { useConnect } from '@wallet-standard/react';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { KV, Panel } from './Shell';
 import { type Role, api, clearToken, getToken, setToken } from './api';
 
 export type Auth = {
@@ -48,18 +49,22 @@ function WalletList({
   onConnected: (a: UiWalletAccount) => void;
 }) {
   return (
-    <section>
-      <h2>{title}</h2>
+    // id="connect": the nav's Connect Wallet button and the hero CTA both scroll here, because this
+    // is the only place that knows which wallets the browser actually exposes.
+    <Panel id="connect" title={`${title} — connect`} meta="Step 01 / 02 · no key ever leaves your wallet">
       {wallets.length === 0 ? (
         <p className="sub">No Solana wallet detected. Install Phantom, Solflare, or Backpack.</p>
       ) : (
-        <div className="row">
-          {wallets.map((wallet) => (
-            <ConnectButton key={wallet.name} wallet={wallet} onConnected={onConnected} />
-          ))}
-        </div>
+        <>
+          <p className="sub">Pick a wallet to continue.</p>
+          <div className="row">
+            {wallets.map((wallet) => (
+              <ConnectButton key={wallet.name} wallet={wallet} onConnected={onConnected} />
+            ))}
+          </div>
+        </>
       )}
-    </section>
+    </Panel>
   );
 }
 
@@ -67,6 +72,7 @@ function ConnectButton({ wallet, onConnected }: { wallet: UiWallet; onConnected:
   const [isConnecting, connect] = useConnect(wallet);
   return (
     <button
+      className="raised"
       disabled={isConnecting}
       onClick={async () => {
         const accounts = await connect();
@@ -115,14 +121,18 @@ function SignIn({
   };
 
   return (
-    <section>
-      <h2>{title}</h2>
-      <p className="sub">{account.address}</p>
+    <Panel id="connect" title={`${title} — sign in`} meta="Step 02 / 02 · sign a nonce to prove the address is yours">
+      <KV k="Wallet" v={<span className="mono">{account.address}</span>} />
+      <KV k="Role" v={role} />
       <div className="row">
-        <button disabled={!!busy} onClick={go}>{busy || 'Sign in'}</button>
-        <button className="ghost" onClick={onDisconnect}>Disconnect</button>
+        <button className="raised" disabled={!!busy} onClick={go}>
+          {busy || 'Sign in'}
+        </button>
+        <button className="ghost" onClick={onDisconnect}>
+          Disconnect
+        </button>
       </div>
-      {error && <p className="err">{error}</p>}
-    </section>
+      {error && <p className="sub err">{error}</p>}
+    </Panel>
   );
 }

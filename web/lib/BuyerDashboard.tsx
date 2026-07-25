@@ -17,8 +17,9 @@ import { useWalletAccountTransactionSendingSigner } from '@solana/react';
 import { useCallback, useEffect, useState } from 'react';
 import type { BuyerSummary, LeaseInfo, NodeInfo } from '../../shared/types';
 import type { Auth } from './AuthPanel';
+import { CopyButton, Stats } from './Dashboard';
+import { KV, Panel, short } from './Shell';
 import { CHAIN, LAMPORTS_PER_SOL, RPC_URL, api, clock, sol } from './api';
-import { Stats } from './Dashboard';
 
 const rpc = createSolanaRpc(RPC_URL);
 const chain = `solana:${CHAIN}` as const;
@@ -108,9 +109,18 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
   };
 
   return (
-    <section>
-      <h2>Buyer dashboard</h2>
-      <p className="sub">{auth.address}</p>
+    <Panel
+      title="Buyer"
+      meta={<span className="mono">{auth.address}</span>}
+      actions={
+        <div className="row">
+          <CopyButton text={auth.address} label="Copy address" className="ghost sm" />
+          <button className="ghost sm" onClick={auth.disconnect}>
+            Disconnect
+          </button>
+        </div>
+      }
+    >
       <Stats
         items={[
           { label: 'Balance', value: me && `${sol(me.balanceLamports)} SOL` },
@@ -123,32 +133,27 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
           { label: 'Total spent', value: me && `${sol(me.totalSpentLamports, 6)} SOL` },
         ]}
       />
-      <div className="row" style={{ marginTop: '1rem' }}>
-        <input value={amount} onChange={(e) => setAmount(e.target.value)} /> SOL
-        <button disabled={!!busy || !me?.payTo} onClick={topUp}>
+
+      <div className="row" style={{ gap: 'var(--stack-md)' }}>
+        <label className="field">
+          <span className="label dim">Top up amount — SOL</span>
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
+        </label>
+        <button className="raised" disabled={!!busy || !me?.payTo} onClick={topUp} style={{ alignSelf: 'flex-end' }}>
           {busy || 'Top up'}
         </button>
-        <button className="ghost" onClick={auth.disconnect}>
-          Disconnect
-        </button>
       </div>
-      {me?.suspended && <p className="err">Account suspended for egress abuse — new rentals are blocked.</p>}
-      {error && <p className="err">{error}</p>}
-    </section>
+
+      {me?.payTo && <KV k="Deposits settle to" v={<span className="mono">{short(me.payTo)}</span>} />}
+      {me?.suspended && <p className="sub err">Account suspended for egress abuse — new rentals are blocked.</p>}
+      {error && <p className="sub err">{error}</p>}
+    </Panel>
   );
 }
 
-export function Explore() {
-  const [nodes, setNodes] = useState<NodeInfo[]>([]);
+export function Explore({ nodes }: { nodes: NodeInfo[] | null }) {
   const [lease, setLease] = useState<LeaseInfo | null>(null);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const tick = () => api<NodeInfo[]>('/nodes').then(setNodes).catch(() => {});
-    tick();
-    const id = setInterval(tick, 4000);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     if (!lease || lease.status === 'ended') return;
@@ -166,85 +171,103 @@ export function Explore() {
     }
   };
 
+  const held = !!(lease && lease.status !== 'ended');
+
   return (
     <>
-      <section>
-        <h2>Explore</h2>
-        <p className="sub" style={{ marginBottom: '0.75rem' }}>
-          Rent a node and you get an <code style={{ display: 'inline', padding: '0.1rem 0.3rem' }}>ssh</code>{' '}
-          command plus a root password — no keygen, no key file. Each lease is a hardened, mount-less
-          Docker container sharing the contributor's kernel, and its password is your (public) wallet
-          address, so treat a lease as a public workspace: no secrets, no credentials, no private data.
+      <Panel
+        id="explore"
+        title="Explore"
+        meta={nodes === null ? 'Loading the roster…' : `${nodes.length} node(s) registered`}
+      >
+        <p className="sub">
+          Rent a node and you get an <code className="inline">ssh</code> command plus a root password — no
+          keygen, no key file. Each lease is a hardened, mount-less Docker container sharing the
+          contributor&apos;s kernel, and its password is your (public) wallet address, so treat a lease as a
+          public workspace: no secrets, no credentials, no private data.
         </p>
-        {nodes.length === 0 ? (
+
+        {nodes !== null && nodes.length === 0 ? (
           <p className="sub">No nodes online. Start a contributor.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Node</th>
-                <th>CPU</th>
-                <th>RAM</th>
-                <th>SOL / hour</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {nodes.map((n) => (
-                <tr key={n.id}>
-                  <td>{n.label}</td>
-                  <td>{n.cpus}</td>
-                  <td>{(n.memMb / 1024).toFixed(1)} GB</td>
-                  <td>{sol(n.rateLamportsPerHour)}</td>
-                  <td>
-                    <button
-                      disabled={n.busy || !!(lease && lease.status !== 'ended')}
-                      onClick={() => rent(n.id)}
-                    >
-                      {n.busy ? 'Busy' : 'Rent'}
-                    </button>
-                  </td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th className="num">CPU</th>
+                  <th className="num">RAM</th>
+                  <th className="num">SOL / hour</th>
+                  <th className="num">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(nodes ?? []).map((n) => (
+                  <tr key={n.id}>
+                    <td>
+                      <span className="mono">{n.label}</span>
+                    </td>
+                    <td className="num">{n.cpus}</td>
+                    <td className="num">{(n.memMb / 1024).toFixed(1)} GB</td>
+                    <td className="num">{sol(n.rateLamportsPerHour)}</td>
+                    <td className="num">
+                      <button className="sm" disabled={n.busy || held} onClick={() => rent(n.id)}>
+                        {n.busy ? 'Busy' : 'Rent'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-        {error && <p className="err">{error}</p>}
-      </section>
+        {error && <p className="sub err">{error}</p>}
+      </Panel>
+
       {lease && <Lease lease={lease} onEnded={setLease} />}
     </>
   );
 }
 
 function Lease({ lease, onEnded }: { lease: LeaseInfo; onEnded: (l: LeaseInfo) => void }) {
+  const status = lease.status === 'starting' ? 'booting' : lease.status;
   return (
-    <section>
-      <h2>Lease</h2>
-      {lease.status === 'starting' && <p>Starting the sandbox…</p>}
+    <Panel
+      title="Lease"
+      meta={<span className="mono">{lease.id}</span>}
+      actions={<span className={`pill ${lease.status === 'active' ? 'solid' : ''}`}>{status}</span>}
+    >
+      {lease.status === 'starting' && <p className="sub">Starting the sandbox…</p>}
+
       {lease.status === 'active' && (
         <>
+          <span className="label dim">SSH</span>
           <code>{lease.ssh}</code>
+          {lease.ssh && <CopyButton text={lease.ssh} label="Copy ssh command" className="ghost sm" />}
+
           {lease.password ? (
             <>
-              <p className="sub" style={{ marginTop: '0.5rem' }}>
-                Root password — <strong>your wallet address</strong>:
-              </p>
+              <span className="label dim">Root password — your wallet address</span>
               <code>{lease.password}</code>
             </>
           ) : (
             <p className="sub">key auth (ssh -i your-key)</p>
           )}
-          <p className="sub">balance runs out in {clock(lease.secondsRemaining ?? 0)}</p>
+
+          <KV k="Balance runs out in" v={clock(lease.secondsRemaining ?? 0)} />
+          <KV k="Rate" v={`${sol(lease.rateLamportsPerHour)} SOL / hour`} />
+
           <button onClick={() => api<LeaseInfo>(`/leases/${lease.id}/release`, { body: {} }).then(onEnded)}>
             Release
           </button>
         </>
       )}
+
       {lease.status === 'ended' && (
-        <p className={lease.error ? 'err' : 'ok'}>
+        <p className={`sub ${lease.error ? 'err' : 'ok'}`}>
           {lease.error ?? `Done — billed ${lease.billedSeconds}s = ${sol(lease.billedLamports ?? '0', 6)} SOL`}
         </p>
       )}
-    </section>
+    </Panel>
   );
 }

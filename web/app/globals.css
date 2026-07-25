@@ -1,31 +1,865 @@
-:root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-body { margin: 0; background: #0b0d10; color: #e6e6e6; }
-main { max-width: 60rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-h1 { letter-spacing: 0.2em; margin: 0; }
-.sub { color: #8b949e; margin-top: 0.25rem; }
-section { border: 1px solid #222831; border-radius: 8px; padding: 1rem; margin-top: 1.5rem; }
-h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.15em; color: #8b949e; margin: 0 0 0.75rem; }
-button { background: #1f6feb; color: #fff; border: 0; border-radius: 6px; padding: 0.5rem 0.9rem; cursor: pointer; font: inherit; }
-button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
-button.ghost { background: transparent; border: 1px solid #30363d; color: #e6e6e6; }
-input { background: #0d1117; border: 1px solid #30363d; color: #e6e6e6; border-radius: 6px; padding: 0.5rem; font: inherit; width: 8rem; }
-table { width: 100%; border-collapse: collapse; }
-td, th { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #1b1f24; font-weight: normal; }
-th { color: #8b949e; font-size: 0.75rem; text-transform: uppercase; }
-code { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 0.5rem; display: block; overflow-x: auto; }
-.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+/* ─────────────────────────────────────────────────────────────────────────────
+   RAVEN — High-Contrast Brutalist design system.
+   Tokens and rules are transcribed from stitch_raven_solana_compute_rental/.
+   Plain CSS on purpose: the app ships as a static export with no CSS toolchain,
+   so the whole system is custom properties plus a small set of named classes.
+   ───────────────────────────────────────────────────────────────────────────── */
 
-/* Segmented rent/contribute switch — the highlight slides because only the padding-box moves. */
-.switch { display: inline-flex; background: #0d1117; border: 1px solid #30363d; border-radius: 999px; padding: 3px; }
-.switch button { background: transparent; color: #8b949e; border-radius: 999px; padding: 0.4rem 1rem; transition: background 0.18s ease, color 0.18s ease; }
-.switch button.on { background: #1f6feb; color: #fff; }
+:root {
+  color-scheme: dark;
 
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.5rem; }
-.stat { background: #0d1117; border: 1px solid #1b1f24; border-radius: 8px; padding: 0.7rem 0.8rem; display: flex; flex-direction: column; gap: 0.2rem; }
-.stat .label { color: #8b949e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; }
-.stat strong { font-size: 1.15rem; }
-.stat .hint { color: #8b949e; font-size: 0.7rem; }
-.mono { word-break: break-all; }
-.err { color: #f85149; }
-.ok { color: #3fb950; }
+  /* Surfaces */
+  --background: #141313;
+  --surface: #141313;
+  --surface-container-lowest: #0e0e0e;
+  --surface-container-low: #1c1b1b;
+  --surface-container: #201f1f;
+  --surface-container-high: #2a2a2a;
+  --surface-container-highest: #353434;
+  --surface-variant: #353434;
+  --surface-bright: #3a3939;
+
+  /* Content */
+  --primary: #ffffff;
+  --on-background: #e5e2e1;
+  --on-surface: #e5e2e1;
+  --on-surface-variant: #c4c7c8;
+  --outline: #8e9192;
+  --outline-variant: #444748;
+  --secondary: #c7c6c6;
+
+  /* The only non-monochrome tokens — reserved for failure states. */
+  --error: #ffb4ab;
+  --on-error: #690005;
+
+  /* Spacing */
+  --unit: 4px;
+  --stack-sm: 8px;
+  --stack-md: 16px;
+  --stack-lg: 32px;
+  --gutter: 24px;
+  --margin-mobile: 16px;
+  --margin-desktop: 48px;
+  --container-max: 1440px;
+
+  /* Fonts are injected by next/font in layout.tsx; the stacks fall back to
+     system monospace so an offline build still reads as a terminal. */
+  --font-heading: var(--font-anybody), 'Anybody', Impact, sans-serif;
+  --font-mono: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  /* "The shape language is absolute" — no curves anywhere, including UA defaults. */
+  border-radius: 0 !important;
+}
+
+html {
+  background: var(--background);
+  /* Anchor jumps (nav → #connect, hero → #explore) glide instead of teleporting. */
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: var(--on-background);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  /* The 2px frame that "contains" the screen, kept at every breakpoint. */
+  border: 2px solid var(--primary);
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--background);
+}
+
+/* ── CRT scanline overlay ────────────────────────────────────────────────── */
+
+.scanlines {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 50%,
+    rgba(255, 255, 255, 0.02) 50%,
+    rgba(255, 255, 255, 0.02)
+  );
+  background-size: 100% 4px;
+}
+
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ── Typography ──────────────────────────────────────────────────────────── */
+
+.display {
+  font-family: var(--font-heading);
+  font-size: 32px; /* headline-lg-mobile; steps up to display-lg at md */
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin: 0;
+}
+
+.headline-lg {
+  font-family: var(--font-heading);
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin: 0;
+}
+
+.headline-md {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin: 0;
+}
+
+.body-lg {
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.body-md,
+.sub {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.sub {
+  color: var(--on-surface-variant);
+  margin: 0;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.code-sm {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mono {
+  word-break: break-all;
+}
+
+.dim {
+  color: var(--on-surface-variant);
+}
+
+.err {
+  color: var(--error);
+}
+
+.ok {
+  color: var(--primary);
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+
+.shell {
+  flex: 1 0 auto;
+  position: relative;
+}
+
+.container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Sections are divided by heavy rules rather than whitespace. */
+.band {
+  border-bottom: 2px solid var(--primary);
+}
+
+.pad {
+  padding: var(--gutter) var(--margin-mobile);
+}
+
+.row {
+  display: flex;
+  gap: var(--stack-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--stack-md);
+  flex-wrap: wrap;
+}
+
+/* A "raised" surface: 2px rule plus a solid, zero-blur white offset. No simulated light. */
+.brut {
+  border: 2px solid var(--primary);
+  box-shadow: 4px 4px 0 0 rgba(255, 255, 255, 1);
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--gutter);
+}
+
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--stack-md);
+}
+
+.hero-copy p {
+  margin: 0;
+  max-width: 42rem;
+}
+
+.hero-cta {
+  gap: var(--stack-md);
+  margin-top: var(--stack-md);
+}
+
+/* The hero's terminal readout — a live panel rather than a decorative image. */
+.readout {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--stack-sm);
+  min-height: 18rem;
+  padding: var(--gutter);
+  background: var(--surface-container-low);
+}
+
+/* ── Stats band ──────────────────────────────────────────────────────────── */
+
+.band-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  /* White fill behind a 2px gap draws the dividers without doubling borders. */
+  gap: 2px;
+  background: var(--primary);
+  border-left: 2px solid var(--primary);
+  border-right: 2px solid var(--primary);
+}
+
+.band-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-sm);
+  background: var(--background);
+  color: var(--on-background);
+}
+
+.band-cell .label {
+  color: var(--on-surface-variant);
+}
+
+.band-cell .headline-lg {
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One cell is inverted, per the design — the emphasis is structural, not chromatic. */
+.band-cell.invert {
+  background: var(--primary);
+  color: var(--background);
+}
+
+.band-cell.invert .label {
+  color: var(--background);
+  opacity: 0.7;
+}
+
+/* ── Top navigation ──────────────────────────────────────────────────────── */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--stack-md);
+  flex-wrap: wrap;
+  padding: var(--stack-md) var(--gutter);
+  background: var(--background);
+  border-bottom: 2px solid var(--primary);
+  box-shadow: 4px 4px 0 0 rgba(255, 255, 255, 1);
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--stack-md);
+}
+
+.nav .wordmark {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+/* Kept on screen at every width rather than folded behind a hamburger — three links fit, and a
+   marketplace that hides its own navigation on a phone is worse than a slightly tighter bar. */
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--stack-sm);
+}
+
+.nav-link {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary);
+  text-decoration: none;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  transition: none;
+}
+
+/* :not(:disabled) matches the button rule's specificity so the nav's flat inversion wins over the
+   global hard-drop hover — nav links sit on a sticky bar and must not shift it. */
+.nav-link:hover:not(:disabled) {
+  background: var(--primary);
+  color: var(--background);
+  transform: none;
+  box-shadow: none;
+}
+
+.nav-link:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+/* Inversion is the selected state — no accent colour needed. */
+.nav-link.on {
+  background: var(--primary);
+  color: var(--background);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+button {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 12px 20px;
+  border: 2px solid var(--primary);
+  background: var(--primary);
+  color: var(--background);
+  cursor: pointer;
+  transition: none;
+}
+
+button:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 0 rgba(255, 255, 255, 1);
+}
+
+button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+button:disabled {
+  border-color: var(--outline);
+  background: var(--surface-container);
+  color: var(--outline);
+  cursor: not-allowed;
+}
+
+/* Secondary: black field, white rule, inverts on hover. */
+button.ghost {
+  background: var(--background);
+  color: var(--primary);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--primary);
+  color: var(--background);
+  transform: none;
+  box-shadow: none;
+}
+
+button.ghost:disabled {
+  background: var(--background);
+  color: var(--outline);
+}
+
+/* Inline, table-density action. */
+button.sm {
+  padding: 6px 10px;
+}
+
+/* The hard-drop shadow that marks a primary call to action at rest. */
+button.raised {
+  box-shadow: 4px 4px 0 0 rgba(255, 255, 255, 1);
+}
+
+button.raised:hover:not(:disabled) {
+  box-shadow: 6px 6px 0 0 rgba(255, 255, 255, 1);
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+
+input {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 10px 12px;
+  width: 8rem;
+  background: var(--background);
+  border: 2px solid var(--primary);
+  color: var(--primary);
+  caret-color: var(--primary);
+}
+
+input:focus {
+  outline: none;
+  background: var(--surface-container-lowest);
+}
+
+input[type='radio'] {
+  width: auto;
+  accent-color: #ffffff;
+  padding: 0;
+}
+
+/* The label flickers when its field takes focus — the specified "glitch". */
+.field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--stack-sm);
+}
+
+.field:focus-within > .label {
+  animation: flicker 0.6s steps(1) 1;
+}
+
+@keyframes flicker {
+  0%,
+  40%,
+  80% {
+    opacity: 1;
+  }
+  20%,
+  60% {
+    opacity: 0.15;
+  }
+}
+
+/* ── Cards / panels ──────────────────────────────────────────────────────── */
+
+.panel {
+  border: 2px solid var(--primary);
+  background: var(--surface-container-lowest);
+  margin-top: var(--stack-lg);
+}
+
+.panel > .panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--stack-md);
+  flex-wrap: wrap;
+  padding: var(--stack-md) var(--gutter);
+  /* "Headers within cards are separated by a 2px horizontal rule." */
+  border-bottom: 2px solid var(--primary);
+}
+
+.panel > .panel-body {
+  padding: var(--gutter);
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-md);
+  align-items: flex-start;
+}
+
+/* ── Stats ───────────────────────────────────────────────────────────────── */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  width: 100%;
+  /* 1px gap + white fill = hairline rules between tiles with no double borders. */
+  gap: 1px;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+.stat {
+  background: var(--background);
+  padding: var(--stack-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-sm);
+}
+
+.stat .label {
+  color: var(--on-surface-variant);
+}
+
+.stat strong {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--primary);
+  /* Numerical data reads as a data sheet: right-aligned, tabular. */
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat .hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--on-surface-variant);
+  text-align: right;
+}
+
+/* Key-value pairs joined by a dot leader — `RAM.........128GB`. */
+.kv {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.kv .k {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.kv .leader {
+  flex: 1;
+  border-bottom: 1px dotted var(--outline-variant);
+  transform: translateY(-3px);
+}
+
+.kv .v {
+  color: var(--primary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 12px var(--stack-md);
+  border-bottom: 1px solid var(--outline-variant);
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+th {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  border-bottom: 2px solid var(--primary);
+}
+
+/* Numeric columns right-align, per the data-sheet rule. */
+td.num,
+th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hovering a row inverts it whole. */
+tbody tr:hover {
+  background: var(--primary);
+  color: var(--background);
+}
+
+tbody tr:hover .dim,
+tbody tr:hover .sub,
+tbody tr:hover .ok {
+  color: var(--background);
+}
+
+tbody tr:hover button {
+  background: var(--background);
+  color: var(--primary);
+  border-color: var(--background);
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* ── Code blocks ─────────────────────────────────────────────────────────── */
+
+code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  display: block;
+  width: 100%;
+  padding: var(--stack-md);
+  background: var(--surface-container-lowest);
+  border: 2px solid var(--primary);
+  color: var(--primary);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+code.inline {
+  display: inline;
+  width: auto;
+  padding: 1px 4px;
+  border-width: 1px;
+}
+
+/* ── Segmented rent/contribute switch ────────────────────────────────────── */
+
+.switch {
+  display: inline-flex;
+  border: 2px solid var(--primary);
+}
+
+.switch button {
+  background: var(--background);
+  color: var(--primary);
+  border: 0;
+  padding: 10px 20px;
+}
+
+.switch button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  background: var(--surface-variant);
+}
+
+.switch button.on {
+  background: var(--primary);
+  color: var(--background);
+}
+
+/* ── Status pill ─────────────────────────────────────────────────────────── */
+
+.pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid currentColor;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pill.solid {
+  background: var(--primary);
+  color: var(--background);
+  border-color: var(--primary);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+.footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--stack-md);
+  padding: var(--stack-md) var(--gutter);
+  background: var(--background);
+  border-top: 2px solid var(--primary);
+}
+
+.footer a {
+  color: var(--on-surface-variant);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.footer a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* ── Scroll-reveal animations ────────────────────────────────────────────── */
+
+/* Base hidden state — every revealable element starts here. */
+.reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+/* Triggered by Intersection Observer — the final, resting state. */
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Directional variants. */
+.reveal-left {
+  opacity: 0;
+  transform: translateX(-48px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-left.revealed {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.reveal-right {
+  opacity: 0;
+  transform: translateX(48px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-right.revealed {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Scale-in: grows from 90% with a slight upward drift. */
+.reveal-scale {
+  opacity: 0;
+  transform: scale(0.92) translateY(20px);
+  transition:
+    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-scale.revealed {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+/* Brutalist glitch-in: a hard clip that sweeps open. */
+.reveal-glitch {
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+  transition:
+    opacity 0.5s ease,
+    clip-path 0.6s cubic-bezier(0.77, 0, 0.175, 1);
+  will-change: opacity, clip-path;
+}
+.reveal-glitch.revealed {
+  opacity: 1;
+  clip-path: inset(0 0 0 0);
+}
+
+/* Children of a stagger container each get a `.reveal` base too. */
+.reveal-stagger > * {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-stagger > .revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Respect user motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-left,
+  .reveal-right,
+  .reveal-scale,
+  .reveal-glitch,
+  .reveal-stagger > * {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+  }
+}
+
+/* ── Breakpoints ─────────────────────────────────────────────────────────── */
+
+@media (min-width: 768px) {
+  .pad {
+    padding: var(--margin-desktop);
+  }
+
+  .nav-left {
+    gap: var(--margin-desktop);
+  }
+
+  .nav-links {
+    gap: var(--stack-lg);
+  }
+
+  .display {
+    font-size: 80px;
+  }
+
+  .footer {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+}
