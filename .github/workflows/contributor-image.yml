@@ -1,0 +1,43 @@
+name: contributor image
+
+# Build + push the contributor daemon image to GHCR on push to main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contributor/**'
+      - 'shared/**'
+      - '.github/workflows/contributor-image.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/raven-contributor
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          # Repo root: the Dockerfile copies both contributor/ and shared/.
+          context: .
+          file: contributor/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -1,12 +1,34 @@
 import '../../shared/env.js';
 
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
 import type { LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
+import {
+  NONCE_TTL_MS,
+  contributorPayout,
+  newContributorKey,
+  newNonce,
+  requireContributorKey,
+  requireSession,
+  sessionAddress,
+  signInMessage,
+  signSession,
+  verifySignIn,
+} from './auth.js';
 import { billable, cost, secondsRemaining } from './billing.js';
-import { charge, credit, getBalance, initSchema, recordPayout } from './db.js';
-import { PLATFORM_PAYTO, confirmDeposit, payoutSol, verifyMessageSignature } from './solana.js';
+import {
+  charge,
+  credit,
+  getBalance,
+  initSchema,
+  putNonce,
+  recordPayout,
+  setUserRole,
+  takeNonce,
+  upsertContributorKey,
+} from './db.js';
+import { PLATFORM_PAYTO, confirmDeposit, payoutSol } from './solana.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
 const METER_INTERVAL_MS = Number(process.env.METER_INTERVAL_MS ?? 10_000);
@@ -14,8 +36,7 @@ const OFFLINE_AFTER_MS = 20_000;
 
 type Node = {
   id: string;
-  token: string;
-  payout: string;
+  payout: string; // the contributor's payout address, resolved from their RAVEN_KEY at register time
   label: string;
   cpus: number;
   memMb: number;
@@ -44,8 +65,6 @@ type Lease = {
 const nodes = new Map<string, Node>();
 const leases = new Map<string, Lease>();
 const queued = new Map<string, NodeCommand[]>(); // nodeId -> pending commands
-const nonces = new Map<string, { nonce: string; expires: number }>();
-const sessions = new Map<string, { address: string; expires: number }>();
 
 const online = (n: Node) => Date.now() - n.lastSeen < OFFLINE_AFTER_MS;
 const push = (nodeId: string, cmd: NodeCommand) => queued.set(nodeId, [...(queued.get(nodeId) ?? []), cmd]);
@@ -101,6 +120,7 @@ async function endLease(lease: Lease, reason: string) {
 
   if (node && amount > 0n) {
     try {
+      // payoutSol is the ONLY reader of PLATFORM_PRIVATE_KEY, and only server-side, here.
       const txid = await payoutSol(node.payout, amount);
       await recordPayout(lease.id, node.payout, amount, txid);
     } catch (e) {
@@ -120,64 +140,60 @@ const asyncRoute =
   (req, res, next) =>
     fn(req, res).catch(next);
 
-// ---------- wallet sign-in ----------
+// ---------- wallet sign-in (role-agnostic: same flow for buyer and contributor) ----------
 
-app.post('/auth/nonce', (req, res) => {
-  const { address } = req.body ?? {};
+app.get('/auth/nonce', asyncRoute(async (req, res) => {
+  const address = String(req.query.address ?? '');
   if (!address) return res.status(400).json({ error: 'address required' });
-  const nonce = randomBytes(16).toString('hex');
-  nonces.set(address, { nonce, expires: Date.now() + 5 * 60_000 });
-  res.json({ message: `RAVEN sign-in\naddress: ${address}\nnonce: ${nonce}` });
-});
-
-app.post('/auth/verify', (req, res) => {
-  const { address, signature } = req.body ?? {};
-  const entry = nonces.get(address);
-  if (!entry || entry.expires < Date.now()) return res.status(400).json({ error: 'nonce expired, start again' });
-  const message = `RAVEN sign-in\naddress: ${address}\nnonce: ${entry.nonce}`;
-  if (!verifyMessageSignature(address, message, signature)) return res.status(401).json({ error: 'bad signature' });
-  nonces.delete(address); // single use
-  const token = randomBytes(24).toString('hex');
-  sessions.set(token, { address, expires: Date.now() + 24 * 3600_000 });
-  res.json({ token, address });
-});
-
-/** Spending anyone's balance requires a session minted from a signed nonce. */
-const auth: express.RequestHandler = (req, res, next) => {
-  const token = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
-  const session = sessions.get(token);
-  if (!session || session.expires < Date.now()) {
-    res.status(401).json({ error: 'sign in first' });
-    return;
-  }
-  (req as express.Request & { address: string }).address = session.address;
-  next();
-};
-const addr = (req: express.Request) => (req as express.Request & { address: string }).address;
-
-// ---------- wallet ----------
-
-app.get('/wallet', auth, asyncRoute(async (req, res) => {
-  res.json({ address: addr(req), balanceLamports: (await getBalance(addr(req))).toString(), payTo: PLATFORM_PAYTO });
+  const nonce = newNonce();
+  await putNonce(address, nonce, NONCE_TTL_MS);
+  res.json({ message: signInMessage(nonce) });
 }));
 
-app.post('/wallet/topup', auth, asyncRoute(async (req, res) => {
+app.post('/auth/verify', asyncRoute(async (req, res) => {
+  const { address, signature } = req.body ?? {};
+  const role = req.body?.role === 'contributor' ? 'contributor' : 'buyer';
+  if (!address || !signature) return res.status(400).json({ error: 'address and signature required' });
+
+  const nonce = await takeNonce(address); // single-use; authoritative nonce is the server's, not the client's
+  if (!nonce) return res.status(400).json({ error: 'nonce expired, start again' });
+  if (!verifySignIn(address, nonce, signature)) return res.status(401).json({ error: 'bad signature' });
+
+  await setUserRole(address, role);
+  const token = signSession(address, role);
+
+  if (role === 'contributor') {
+    // Payout address IS the verified wallet — earnings go back to the address that signed in.
+    const contributorKey = await upsertContributorKey(address, address, newContributorKey);
+    return res.json({ token, address, role, contributorKey });
+  }
+  res.json({ token, address, role });
+}));
+
+// ---------- wallet (buyer) ----------
+
+app.get('/wallet', requireSession, asyncRoute(async (req, res) => {
+  const address = sessionAddress(req);
+  res.json({ address, balanceLamports: (await getBalance(address)).toString(), payTo: PLATFORM_PAYTO });
+}));
+
+app.post('/wallet/topup', requireSession, asyncRoute(async (req, res) => {
   const { signature } = req.body ?? {};
   if (!signature) return res.status(400).json({ error: 'signature required' });
-  const amount = await confirmDeposit(signature, addr(req));
-  const balance = await credit(signature, addr(req), amount);
+  const address = sessionAddress(req);
+  const amount = await confirmDeposit(signature, address);
+  const balance = await credit(signature, address, amount);
   res.json({ creditedLamports: amount.toString(), balanceLamports: balance.toString() });
 }));
 
-// ---------- nodes (contributor side) ----------
+// ---------- nodes (contributor daemon: authenticates with RAVEN_KEY, never a wallet) ----------
 
-app.post('/nodes/register', (req, res) => {
-  const { payout, label, cpus, memMb, rateLamportsPerHour } = req.body ?? {};
-  if (!payout || !rateLamportsPerHour) return res.status(400).json({ error: 'payout and rate required' });
+app.post('/nodes/register', requireContributorKey, (req, res) => {
+  const { label, cpus, memMb, rateLamportsPerHour } = req.body ?? {};
+  if (!rateLamportsPerHour) return res.status(400).json({ error: 'rate required' });
   const node: Node = {
     id: randomUUID(),
-    token: randomBytes(24).toString('hex'),
-    payout,
+    payout: contributorPayout(req), // resolved from RAVEN_KEY server-side — never sent by the daemon
     label: label ?? 'node',
     cpus: Number(cpus ?? 1),
     memMb: Number(memMb ?? 1024),
@@ -186,17 +202,18 @@ app.post('/nodes/register', (req, res) => {
   };
   nodes.set(node.id, node);
   console.log(`node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB)`);
-  res.json({ nodeId: node.id, token: node.token });
+  res.json({ nodeId: node.id });
 });
 
-const nodeAuth = (req: express.Request): Node | undefined => {
+// A daemon may only touch a node whose payout matches its own key (ties node ops to the minting key).
+const ownedNode = (req: express.Request): Node | undefined => {
   const node = nodes.get(String(req.params.id));
-  return node && node.token === (req.body?.token ?? '') ? node : undefined;
+  return node && node.payout === contributorPayout(req) ? node : undefined;
 };
 
-app.post('/nodes/:id/heartbeat', (req, res) => {
-  const node = nodeAuth(req);
-  if (!node) return res.status(401).json({ error: 'unknown node' });
+app.post('/nodes/:id/heartbeat', requireContributorKey, (req, res) => {
+  const node = ownedNode(req);
+  if (!node) return res.status(404).json({ error: 'unknown node' });
   node.lastSeen = Date.now();
   const commands = queued.get(node.id) ?? [];
   queued.delete(node.id);
@@ -204,9 +221,9 @@ app.post('/nodes/:id/heartbeat', (req, res) => {
 });
 
 /** The sandbox is up and reachable — the lease starts billing from here. */
-app.post('/nodes/:id/ready', (req, res) => {
-  const node = nodeAuth(req);
-  if (!node) return res.status(401).json({ error: 'unknown node' });
+app.post('/nodes/:id/ready', requireContributorKey, (req, res) => {
+  const node = ownedNode(req);
+  if (!node) return res.status(404).json({ error: 'unknown node' });
   const lease = leases.get(req.body?.leaseId);
   if (!lease || lease.status === 'ended') return res.json({ ok: false });
   if (req.body.error) {
@@ -223,25 +240,26 @@ app.post('/nodes/:id/ready', (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- explore + rent (buyer side) ----------
+// ---------- explore + rent (buyer) ----------
 
 app.get('/nodes', (_req, res) => {
   res.json([...nodes.values()].filter(online).map(toNodeInfo));
 });
 
-app.post('/leases', auth, asyncRoute(async (req, res) => {
+app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   const node = nodes.get(req.body?.nodeId);
   if (!node || !online(node)) return res.status(404).json({ error: 'node not available' });
   if (node.leaseId) return res.status(409).json({ error: 'node is busy' });
 
-  const balance = await getBalance(addr(req));
+  const address = sessionAddress(req);
+  const balance = await getBalance(address);
   if (balance < cost(node.rate, 60)) return res.status(402).json({ error: 'top up first: under one minute of balance' });
 
   const lease: Lease = {
     id: randomUUID(),
     nodeId: node.id,
-    address: addr(req),
-    password: addr(req), // per-lease password on a throwaway root container
+    address,
+    password: address, // per-lease password on a throwaway root container
     rate: node.rate,
     status: 'starting',
   };
@@ -251,15 +269,15 @@ app.post('/leases', auth, asyncRoute(async (req, res) => {
   res.json(await toLeaseInfo(lease));
 }));
 
-app.get('/leases/:id', auth, asyncRoute(async (req, res) => {
+app.get('/leases/:id', requireSession, asyncRoute(async (req, res) => {
   const lease = leases.get(String(req.params.id));
-  if (!lease || lease.address !== addr(req)) return res.status(404).json({ error: 'no such lease' });
+  if (!lease || lease.address !== sessionAddress(req)) return res.status(404).json({ error: 'no such lease' });
   res.json(await toLeaseInfo(lease));
 }));
 
-app.post('/leases/:id/release', auth, asyncRoute(async (req, res) => {
+app.post('/leases/:id/release', requireSession, asyncRoute(async (req, res) => {
   const lease = leases.get(String(req.params.id));
-  if (!lease || lease.address !== addr(req)) return res.status(404).json({ error: 'no such lease' });
+  if (!lease || lease.address !== sessionAddress(req)) return res.status(404).json({ error: 'no such lease' });
   await endLease(lease, 'released');
   res.json(await toLeaseInfo(lease));
 }));

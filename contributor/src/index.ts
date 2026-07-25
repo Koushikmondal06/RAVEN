@@ -7,8 +7,11 @@ import type { NodeCommand } from '../../shared/types.js';
 
 const run = promisify(execFile);
 
+// The daemon needs exactly two things: which registry to call, and the bearer key that identifies it.
+// No wallet, no keypair, no payout address ever runs on this box — the backend resolves RAVEN_KEY to a
+// payout address server-side. Get RAVEN_KEY from the "Become a Contributor" page after wallet sign-in.
 const REGISTRY_URL = process.env.REGISTRY_URL ?? 'http://localhost:4000';
-const PAYOUT_ADDRESS = process.env.PAYOUT_ADDRESS ?? '';
+const RAVEN_KEY = process.env.RAVEN_KEY ?? '';
 const RATE = process.env.RATE_LAMPORTS_PER_HOUR ?? '50000000'; // 0.05 SOL/hour
 const TUNNEL_MODE = process.env.TUNNEL_MODE ?? 'bore'; // bore | local
 const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
@@ -17,7 +20,12 @@ const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1))
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
 const IMAGE = 'raven-sandbox';
 
-if (!PAYOUT_ADDRESS) throw new Error('PAYOUT_ADDRESS is not set — earnings would have nowhere to land');
+if (!RAVEN_KEY) {
+  throw new Error(
+    'RAVEN_KEY is not set. Sign in on the "Become a Contributor" page to get one, then run with ' +
+      '-e RAVEN_KEY=rvn_ctb_… (and REGISTRY_URL if the backend is not on localhost).',
+  );
+}
 
 const box = (leaseId: string) => `raven-${leaseId.slice(0, 8)}`;
 const tunnelBox = (leaseId: string) => `raven-bore-${leaseId.slice(0, 8)}`;
@@ -45,7 +53,7 @@ async function boreTunnel(leaseId: string, hostPort: number): Promise<{ host: st
   throw new Error('bore never reported a remote port');
 }
 
-async function start(nodeId: string, token: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
+async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
   const name = box(cmd.leaseId);
   // Hardened + mount-less: no host filesystem, no privilege escalation, capped CPU/RAM/PIDs.
   await run('docker', [
@@ -61,7 +69,7 @@ async function start(nodeId: string, token: string, cmd: Extract<NodeCommand, { 
   const { stdout } = await run('docker', ['port', name, '22']);
   const hostPort = Number(stdout.trim().split('\n')[0].split(':').pop());
   const where = TUNNEL_MODE === 'bore' ? await boreTunnel(cmd.leaseId, hostPort) : { host: lanIp(), port: hostPort };
-  await post(`/nodes/${nodeId}/ready`, { token, leaseId: cmd.leaseId, ...where });
+  await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, ...where });
   console.log(`lease ${cmd.leaseId} up: ssh root@${where.host} -p ${where.port}`);
 }
 
@@ -75,7 +83,8 @@ async function stop(leaseId: string) {
 async function post(path: string, body: unknown) {
   const res = await fetch(`${REGISTRY_URL}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    // RAVEN_KEY is the only credential the daemon holds — a bearer token, not a wallet.
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${RAVEN_KEY}` },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
@@ -85,8 +94,7 @@ async function post(path: string, body: unknown) {
 console.log(`building ${IMAGE} …`);
 await run('docker', ['build', '-t', IMAGE, new URL('../sandbox', import.meta.url).pathname]);
 
-const { nodeId, token } = await post('/nodes/register', {
-  payout: PAYOUT_ADDRESS,
+const { nodeId } = await post('/nodes/register', {
   label: LABEL,
   cpus: CPUS,
   memMb: MEM_MB,
@@ -96,13 +104,13 @@ console.log(`registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM
 
 setInterval(async () => {
   try {
-    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, { token });
+    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, {});
     for (const cmd of commands as NodeCommand[]) {
       if (cmd.type === 'start') {
-        await start(nodeId, token, cmd).catch(async (e) => {
+        await start(nodeId, cmd).catch(async (e) => {
           console.error('sandbox failed to start:', e);
           await stop(cmd.leaseId);
-          await post(`/nodes/${nodeId}/ready`, { token, leaseId: cmd.leaseId, error: String(e.message ?? e) });
+          await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, error: String(e.message ?? e) });
         });
       } else {
         await stop(cmd.leaseId);

@@ -5,15 +5,25 @@ export const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? 'https://api.de
 export const CHAIN = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? 'devnet') as 'devnet' | 'mainnet' | 'testnet';
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 
+export type Role = 'buyer' | 'contributor';
+
+// The session JWT from /auth/verify. Client-only storage — never inlined at build.
+const TOKEN_KEY = 'raven:token';
+export const getToken = () => (typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY));
+export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
 export async function api<T>(
   path: string,
-  opts: { method?: string; body?: unknown; token?: string | null } = {},
+  opts: { method?: string; body?: unknown; token?: string | null; auth?: boolean } = {},
 ): Promise<T> {
+  // Attach the stored session token by default; pass auth:false for the public nonce/verify calls.
+  const token = opts.token ?? (opts.auth === false ? null : getToken());
   const res = await fetch(`${BASE}${path}`, {
     method: opts.method ?? (opts.body ? 'POST' : 'GET'),
     headers: {
       'content-type': 'application/json',
-      ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
