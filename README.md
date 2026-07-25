@@ -152,6 +152,13 @@ Run these from the **repo root** — the compose file lives there, not inside ea
 The `web` image bakes `NEXT_PUBLIC_*` in at build time (build args). Compose interpolates them from
 `--env-file web/.env` (or the shell), so pass `--env-file web/.env` when building the web image.
 
+**Behind https, keep `NEXT_PUBLIC_REGISTRY_URL=/api`** (the compose default). The web image's nginx
+reverse-proxies `/api/` to the `backend` service, so the browser only ever talks to the page's own
+origin. An absolute URL here is the usual "the UI loads but nothing happens" bug: the bundle is
+static, so `http://localhost:4000` means the *visitor's* machine, and any plain-`http` registry URL is
+blocked as mixed content on an `https` page — the requests never leave the browser, which is why the
+backend log stays silent. Only set an absolute URL when the registry has its own https hostname.
+
 **No `contributor` service, deliberately.** The daemon delivers the microVM tier with Firecracker,
 which needs `/dev/kvm`, root-level tap networking, and host binaries the image doesn't carry. Making it
 work in a container would take `--privileged` plus the Docker socket — full host root, which is exactly

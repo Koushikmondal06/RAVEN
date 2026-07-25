@@ -15,10 +15,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root (sudo)"; exit 1; }
 
-ARCH="$(uname -m)"   # firecracker publishes x86_64 and aarch64
-case "$ARCH" in
-  x86_64|aarch64) ;;
-  *) echo "unsupported arch $ARCH (firecracker ships x86_64 and aarch64)"; exit 1 ;;
+# firecracker publishes x86_64 and aarch64. Normalize first: Linux says aarch64/x86_64 but macOS says
+# arm64, and rejecting that name would hide the real reason this host can't work (no KVM) behind an
+# "unsupported arch" error.
+case "$(uname -m)" in
+  x86_64|amd64)   ARCH=x86_64 ;;
+  aarch64|arm64)  ARCH=aarch64 ;;
+  *) echo "unsupported arch $(uname -m) (firecracker ships x86_64 and aarch64)"; exit 1 ;;
 esac
 
 # --- the one thing no script can fix ------------------------------------------------------------

@@ -151,6 +151,15 @@ async function endLease(lease: Lease, reason: string) {
 }
 
 const app = express();
+// One line per request. Without it a misconfigured web bundle looks identical to a working one from
+// the server side: the browser never calls, and the log stays silent with no way to tell which.
+app.use((req, res, next) => {
+  // Heartbeats are every few seconds per node — logging them would bury everything else.
+  if (!req.path.endsWith('/heartbeat')) {
+    res.on('finish', () => console.log(`${req.method} ${req.originalUrl} ${res.statusCode} (${req.headers.origin ?? '-'})`));
+  }
+  next();
+});
 app.use(cors());
 app.use(express.json());
 
