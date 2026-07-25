@@ -7,7 +7,15 @@ import { api, clock, sol } from './api';
 import { CopyButton, Stats } from './Dashboard';
 
 const IMAGE = process.env.NEXT_PUBLIC_CONTRIBUTOR_IMAGE ?? 'ghcr.io/your-org/raven-contributor';
-const REGISTRY = process.env.NEXT_PUBLIC_REGISTRY_URL ?? 'http://localhost:4000';
+const REPO = process.env.NEXT_PUBLIC_REPO_URL ?? 'https://github.com/your-org/RAVEN.git';
+const RAW_REGISTRY = process.env.NEXT_PUBLIC_REGISTRY_URL || 'http://localhost:4000';
+
+/** `/api` is the same-origin proxy path — meaningless to a daemon on someone else's box, so expand it
+ *  to this page's own origin. Called in render, not at module load, so it reads the real location. */
+const registryUrl = () =>
+  RAW_REGISTRY.startsWith('/') && typeof window !== 'undefined'
+    ? `${window.location.origin}${RAW_REGISTRY}`
+    : RAW_REGISTRY;
 
 export function ContributorDashboard({ auth }: { auth: Auth }) {
   const [me, setMe] = useState<ContributorSummary | null>(null);
@@ -166,25 +174,29 @@ export function ContributorDashboard({ auth }: { auth: Auth }) {
 }
 
 function RunDaemon({ apiKey }: { apiKey: string }) {
-  // The docker socket lets the daemon launch sandboxes as sibling containers on your host — the one
-  // mount the design needs; it carries no secrets.
-  const cmd = `docker run -d \\
-  -e RAVEN_KEY=${apiKey} \\
-  -e REGISTRY_URL=${REGISTRY} \\
-  -v /var/run/docker.sock:/var/run/docker.sock \\
-  ${IMAGE}`;
+  // One command on any ordinary Linux VM: it installs gVisor, writes the config, and starts the
+  // daemon. No KVM, no wallet on the box, no inbound ports.
+  const registry = registryUrl();
+  const cmd = `git clone ${REPO} raven && cd raven
+sudo bash contributor/scripts/quickstart.sh ${apiKey} ${registry}`;
 
   return (
     <section>
       <h2>Run the daemon</h2>
-      <code>{cmd}</code>
-      <p className="sub err">
-        Warning: mounting the Docker socket gives this container host root. Fine for a local demo; for
-        a real machine run the daemon natively under systemd instead (see contributor/docs/daemon-isolation.md).
+      <p className="sub">
+        On any Linux machine with Docker. The script installs gVisor (runsc), writes the config, and
+        starts your node — it appears in Explore within ~10 seconds. Re-run it any time.
       </p>
+      <code>{cmd}</code>
       <div className="row" style={{ marginTop: '0.75rem' }}>
         <CopyButton text={cmd} label="Copy command" />
       </div>
+      <p className="sub" style={{ marginTop: '0.75rem' }}>
+        Prefer a container? <code style={{ display: 'inline', padding: '0.1rem 0.3rem' }}>
+          docker run -d -e RAVEN_KEY={apiKey} -e REGISTRY_URL={registry} -v /var/run/docker.sock:/var/run/docker.sock {IMAGE}
+        </code>{' '}
+        — but mounting the Docker socket gives that container host root, so it's for local demos only.
+      </p>
     </section>
   );
 }

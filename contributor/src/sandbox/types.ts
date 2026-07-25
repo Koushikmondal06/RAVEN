@@ -28,7 +28,7 @@ export type ProbeResult = {
 };
 
 export interface SandboxBackend {
-  name: 'docker' | 'firecracker';
+  name: 'docker' | 'gvisor' | 'firecracker';
   tier: IsolationTier; // the tier this backend delivers when available
   probe(): Promise<ProbeResult>;
   create(spec: SandboxSpec): Promise<SandboxHandle>;

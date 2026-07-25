@@ -7,12 +7,13 @@
 import type { IsolationTier } from '../../../shared/types.js';
 import { DockerBackend, type DockerConfig } from './docker.js';
 import { FirecrackerBackend } from './firecracker.js';
+import { GvisorBackend } from './gvisor.js';
 import type { SandboxBackend } from './types.js';
 
 export type BackendProbe = { backend: string; tier: IsolationTier; available: boolean; reason?: string };
 
 export async function probeBackends(cfg: DockerConfig): Promise<BackendProbe[]> {
-  const backends: SandboxBackend[] = [new FirecrackerBackend(cfg), new DockerBackend(cfg)];
+  const backends: SandboxBackend[] = [new GvisorBackend(cfg), new FirecrackerBackend(cfg), new DockerBackend(cfg)];
   return Promise.all(
     backends.map(async (b) => {
       const probe = await b.probe();

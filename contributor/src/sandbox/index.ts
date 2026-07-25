@@ -1,6 +1,7 @@
 /** Picks the sandbox backend from SANDBOX_BACKEND and refuses to run if it can't deliver. */
 import { DockerBackend, type DockerConfig } from './docker.js';
 import { FirecrackerBackend } from './firecracker.js';
+import { GvisorBackend } from './gvisor.js';
 import type { SandboxBackend } from './types.js';
 
 export type { SandboxBackend, SandboxHandle, SandboxSpec, ProbeResult } from './types.js';
@@ -18,6 +19,9 @@ export async function selectBackend(name: string, docker: DockerConfig): Promise
 
 function build(name: string, docker: DockerConfig): SandboxBackend {
   switch (name) {
+    case 'gvisor':
+      // The default: a virtualized kernel in userspace, no KVM, so it runs on any ordinary Linux VM.
+      return new GvisorBackend(docker);
     case 'firecracker':
       return new FirecrackerBackend(docker);
     case 'docker':
@@ -25,6 +29,6 @@ function build(name: string, docker: DockerConfig): SandboxBackend {
       // running this backend registers fine but no buyer can rent it.
       return new DockerBackend(docker);
     default:
-      throw new Error(`unknown SANDBOX_BACKEND=${name} (known: firecracker, docker)`);
+      throw new Error(`unknown SANDBOX_BACKEND=${name} (known: gvisor, firecracker, docker)`);
   }
 }

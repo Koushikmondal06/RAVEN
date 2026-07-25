@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
 import type { EgressPolicy, IsolationTier, LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
-import { isSshPublicKey, satisfiesTier } from '../../shared/types.js';
+import { TIER_RANK, isSshPublicKey, satisfiesTier } from '../../shared/types.js';
 import {
   NONCE_TTL_MS,
   contributorPayout,
@@ -264,7 +264,13 @@ app.delete('/contributor/keys/:key', requireSession, asyncRoute(async (req, res)
 
 // ---------- nodes (contributor daemon: authenticates with RAVEN_KEY, never a wallet) ----------
 
-const TIERS: IsolationTier[] = ['container', 'microvm'];
+const TIERS: IsolationTier[] = ['container', 'usermode-kernel', 'microvm'];
+
+// The floor for every lease, enforced server-side. gVisor needs no KVM, so any ordinary Linux VM can
+// clear it; 'container' (shared host kernel) never can. Raise to 'microvm' to require real VMs.
+// A typo in the env var must not silently drop the floor, so an unknown value falls back.
+const envFloor = process.env.MARKET_MIN_ISOLATION as IsolationTier | undefined;
+const MARKET_MIN_ISOLATION: IsolationTier = envFloor && TIERS.includes(envFloor) ? envFloor : 'usermode-kernel';
 
 app.post('/nodes/register', requireContributorKey, (req, res) => {
   const { label, cpus, memMb, rateLamportsPerHour, isolation, isolationBackend, egressMode } = req.body ?? {};
@@ -349,11 +355,15 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   // Never place a lease on a node weaker than the buyer's minimum — and say which tiers exist.
   // Reject an unknown tier outright: TIER_RANK[garbage] is undefined, so satisfiesTier would say
   // "below minimum" for every node and the buyer would see a confusing 409 instead of a bad request.
-  const minIsolation = req.body?.minIsolation as IsolationTier | undefined;
-  if (minIsolation && !TIERS.includes(minIsolation)) {
-    return res.status(400).json({ error: `unknown minIsolation ${minIsolation}`, tiers: TIERS });
+  const requested = req.body?.minIsolation as IsolationTier | undefined;
+  if (requested && !TIERS.includes(requested)) {
+    return res.status(400).json({ error: `unknown minIsolation ${requested}`, tiers: TIERS });
   }
-  if (minIsolation && !satisfiesTier(node.isolation, minIsolation)) {
+  // A buyer may raise the floor but never lower it: MARKET_MIN_ISOLATION applies even when the
+  // request omits minIsolation, so a shared-kernel 'container' node is unrentable through the API
+  // and not merely hidden by the web UI's own gate.
+  const minIsolation = requested && TIER_RANK[requested] > TIER_RANK[MARKET_MIN_ISOLATION] ? requested : MARKET_MIN_ISOLATION;
+  if (!satisfiesTier(node.isolation, minIsolation)) {
     const availableTiers = [
       ...new Set([...nodes.values()].filter((n) => online(n) && !n.leaseId).map((n) => n.isolation)),
     ];

@@ -3,8 +3,8 @@
 Rent someone else's machine. Pay by the second, in SOL.
 
 A contributor shares a real machine; a buyer (a human in the web app, or an autonomous agent) rents
-it, gets an `ssh` command into a throwaway **Firecracker microVM**, and is billed for the exact seconds
-used. Solana devnet, custodial balances, no on-chain program required.
+it, gets an `ssh` command into a throwaway **gVisor sandbox** (or a Firecracker microVM), and is
+billed for the exact seconds used. Solana devnet, custodial balances, no on-chain program required.
 
 ## Architecture
 
@@ -19,8 +19,8 @@ flowchart LR
 
     subgraph contribs [Contributor host]
         contributor["contributor/ · daemon<br/>RAVEN_KEY bearer · reaper · kill switch"]
-        backendsel["SandboxBackend<br/>firecracker (microvm) | docker (dev)<br/>(probe gates startup + advertises the tier)"]
-        sandbox["microVM · own guest kernel via jailer<br/>ephemeral, key-only SSH · guest TTL"]
+        backendsel["SandboxBackend<br/>gvisor (usermode-kernel) | firecracker (microvm) | docker (dev)<br/>(probe gates startup + advertises the tier)"]
+        sandbox["sandbox · virtualized kernel (runsc sentry, or a guest kernel via jailer)<br/>ephemeral, key-only SSH · guest TTL"]
         egress["per-lease nftables + tc<br/>default-drop · allowlist · drop counter"]
     end
 
@@ -49,7 +49,7 @@ flowchart LR
 | Folder | What it is |
 |---|---|
 | `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, the isolation-tier gate (`minIsolation`), lease lifecycle + billing watchdog, egress-abuse suspension. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
-| `contributor/` | Runs on each shared machine (Linux + `/dev/kvm`, as root). `RAVEN_KEY` bearer only (no wallet). A `SandboxBackend` (`src/sandbox/`, selected by `SANDBOX_BACKEND`) boots each lease as a **Firecracker microVM** under `jailer` and publishes its SSH port over a bore tunnel; a per-lease nftables firewall (`src/net/`) filters egress on the guest's tap; a reaper destroys orphans; a local kill switch tears everything down. `docker` is a local-dev backend only. **Setup guide: [contributor/README.md](contributor/README.md).** |
+| `contributor/` | Runs on each shared machine (any Linux host with Docker; `/dev/kvm` + root only for the microVM tier). `RAVEN_KEY` bearer only (no wallet). A `SandboxBackend` (`src/sandbox/`, selected by `SANDBOX_BACKEND`) runs each lease as a **gVisor sandbox** — or a Firecracker microVM under `jailer` — and publishes its SSH port over a bore tunnel; a per-lease nftables firewall (`src/net/`) filters egress on the guest's tap; a reaper destroys orphans; a local kill switch tears everything down. `docker` is a local-dev backend only. **One-command setup: [contributor/README.md](contributor/README.md).** |
 | `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack), and one **Rent / Contribute switch** flips between the two dashboards on the same session — the same wallet can be both. Buyer side (`/`): balance, total lease time, lease count, spend, tier badges, SSH-key field, minimum-tier gate ("Below min" on weaker nodes). Contributor side (`/contributor`): earnings (incl. unsettled), balance, leases given, time given, your nodes, and up to two contributor keys. |
 | `example-buyer/` | The buyer flow with no human: an agent that generates an ephemeral SSH keypair, signs in, tops up, requests the strongest tier (with explicit fallback), SSHes in with key auth, then releases. |
 
@@ -76,30 +76,36 @@ register rather than downgrading.
 
 | Tier | `SANDBOX_BACKEND` | Boundary | Needs | Rentable? |
 |---|---|---|---|---|
-| `microvm` | `firecracker` | own guest kernel under KVM, launched via `jailer` | `/dev/kvm` (bare metal or nested virt) | ✅ **the only rentable tier** |
+| `usermode-kernel` | `gvisor` | every guest syscall served by runsc's userspace sentry | Docker + one script | ✅ **the default** |
+| `microvm` | `firecracker` | own guest kernel under KVM, launched via `jailer` | `/dev/kvm` (bare metal or nested virt) | ✅ stronger, more setup |
 | `container` | `docker` | shared host kernel, namespaces only | nothing | ❌ local dev only — "Below min" |
 
-**Every rentable lease is a Firecracker microVM.** The marketplace minimum is `microvm`, so a
-`container` node registers fine but every row shows *"Below min"* and can't be rented — it exists so
-you can develop the flow on a laptop. `SANDBOX_BACKEND=firecracker` is the default.
+**Every rentable lease runs in a virtualized kernel.** The marketplace minimum is `usermode-kernel`,
+and it is enforced **server-side**: `POST /leases` applies `MARKET_MIN_ISOLATION` (default
+`usermode-kernel`, override on the registry) even when the client sends no `minIsolation`, so a
+`container` node registers fine but can never be rented — it exists so you can develop the flow on a
+laptop. gVisor is the default because it needs **no KVM**: an ordinary cloud VM qualifies.
 
-**Contributing a machine? → [contributor/README.md](contributor/README.md)** — requirements first,
-then step-by-step: get your key → set up Firecracker → configure → run → verify it's rentable.
-
-One command sets up a host, then the daemon runs natively (it needs root for tap + loop-mount):
+**Contributing a machine? → [contributor/README.md](contributor/README.md).** The whole setup, on any
+Linux VM with Docker:
 
 ```bash
-sudo bash contributor/scripts/setup-firecracker.sh   # firecracker + jailer, guest kernel, dirs, NAT
-sudo -E npm run contributor                          # contributor/.env: RAVEN_KEY, REGISTRY_URL
+git clone <this repo> raven && cd raven
+sudo bash contributor/scripts/quickstart.sh rvn_ctb_… https://api.raven.example
 ```
 
-**The hard requirement is `/dev/kvm`** — bare metal or a nested-virt instance (Hetzner/OVH dedicated,
-AWS EC2 `*.metal`, GCP with nested virt). macOS, Apple silicon under Colima, and standard DigitalOcean
-droplets do **not** expose KVM; the registry, MongoDB and the web app run fine on an ordinary droplet,
-only the contributor daemon needs it. Check any host with
-`bash contributor/scripts/preflight-microvm.sh`, and see
-[contributor/docs/microvm-setup.md](contributor/docs/microvm-setup.md). The Firecracker path compiles
-and is checked by that preflight, but it is verified only by hand on a KVM host — not in CI.
+That installs gVisor (`runsc`), writes `contributor/.env`, installs dependencies and starts the
+daemon; the node appears in Explore within ~10s. Idempotent — re-run it any time. The `rvn_ctb_…` key
+comes from the web app's **Contribute** page, which shows this exact command with your key filled in.
+See [contributor/docs/gvisor-setup.md](contributor/docs/gvisor-setup.md).
+
+**The stronger `microvm` tier needs `/dev/kvm`** — bare metal or a nested-virt instance (Hetzner/OVH
+dedicated, AWS EC2 `*.metal`, GCP with nested virt). macOS, Apple silicon under Colima, and standard
+DigitalOcean droplets do **not** expose KVM. Check with
+`bash contributor/scripts/preflight-microvm.sh`, set up with
+`sudo bash contributor/scripts/setup-firecracker.sh`, run with `sudo -E npm run contributor`, and see
+[contributor/docs/microvm-setup.md](contributor/docs/microvm-setup.md). Both non-`container` backends
+compile and self-probe at startup, but each is verified only by hand on a real Linux host — not in CI.
 
 ## Run it
 
@@ -116,10 +122,10 @@ npm run backend
 cp web/.env.example web/.env           # NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
 npm run web                            # Buyer at / · "Become a Contributor" at /contributor
 
-# 3. share THIS machine's compute — needs a Linux host with /dev/kvm, or the node isn't rentable
-sudo bash contributor/scripts/setup-firecracker.sh  # one-time: firecracker, jailer, guest kernel, NAT
-cp contributor/.env.example contributor/.env        # set RAVEN_KEY (from the Contribute page)
-sudo -E npm run contributor                         # full guide: contributor/README.md
+# 3. share THIS machine's compute — any Linux host with Docker (no KVM needed)
+sudo bash contributor/scripts/quickstart.sh rvn_ctb_… http://localhost:4000
+#    gVisor + config + deps + daemon, in one idempotent command. Key: the Contribute page.
+#    Manual equivalent: setup-gvisor.sh, then cp contributor/.env.example contributor/.env, npm run contributor
 
 # …or the autonomous buyer agent (its own funded key — signs in, tops up, rents)
 cp example-buyer/.env.example example-buyer/.env   # set BUYER_PRIVATE_KEY
@@ -159,11 +165,11 @@ static, so `http://localhost:4000` means the *visitor's* machine, and any plain-
 blocked as mixed content on an `https` page — the requests never leave the browser, which is why the
 backend log stays silent. Only set an absolute URL when the registry has its own https hostname.
 
-**No `contributor` service, deliberately.** The daemon delivers the microVM tier with Firecracker,
-which needs `/dev/kvm`, root-level tap networking, and host binaries the image doesn't carry. Making it
-work in a container would take `--privileged` plus the Docker socket — full host root, which is exactly
-what the isolation is meant to prevent. Contributors run it natively
-(`sudo -E npm run contributor`, or the systemd unit); see
+**No `contributor` service, deliberately.** Both rentable tiers need host-level access the image can't
+carry honestly: gVisor's `runsc` is registered with the *host's* Docker daemon, and Firecracker needs
+`/dev/kvm` plus root-level tap networking. Containerizing either means `--privileged` or the Docker
+socket — full host root, exactly what the isolation is meant to prevent. Contributors run the daemon
+natively (`contributor/scripts/quickstart.sh`, or the systemd unit); see
 [contributor/docs/daemon-isolation.md](contributor/docs/daemon-isolation.md). `contributor/Dockerfile`
 remains for the local-dev `container` tier only.
 
@@ -190,19 +196,21 @@ There is no root `.env` — each app reads its own: `backend/.env`, `web/.env`, 
 `MAINNET`) are baked in at build time. See each `<app>/.env.example` for its variables; flip
 `MAINNET=true` (backend, web, buyer) to target mainnet-beta instead of devnet.
 
-Isolation + egress are contributor knobs: **`SANDBOX_BACKEND`** picks the tier (`firecracker` default =
-`microvm`, rentable; `docker` = `container`, local dev only) and the daemon fails to start if that
-backend's host requirements aren't met. The `FC_*` vars move the guest kernel, rootfs cache, network
-slots and jailer chroot. **`EGRESS_MODE`** (`allowlist` default / `deny-all` / `open`) is applied per
+Isolation + egress are contributor knobs: **`SANDBOX_BACKEND`** picks the tier (`gvisor` default =
+`usermode-kernel`, rentable; `firecracker` = `microvm`, rentable, needs KVM; `docker` = `container`,
+local dev only) and the daemon fails to start if that backend's host requirements aren't met. The
+`FC_*` vars move the guest kernel, rootfs cache, network slots and jailer chroot (firecracker only).
+On the registry, **`MARKET_MIN_ISOLATION`** (default `usermode-kernel`) is the floor every lease must
+clear, applied even when a client sends no `minIsolation`. **`EGRESS_MODE`** (`allowlist` default / `deny-all` / `open`) is applied per
 lease and advertised on the node, so buyers see it before renting. SSH is key-only unless the registry
 sets `ALLOW_PASSWORD_SSH=true` (off by default).
 
 ## Demo script (the money shot)
 
-1. Start the registry, then two contributors — one `firecracker` on a KVM host (after
-   `setup-firecracker.sh`) and one `docker` anywhere, to show the gate working in both directions.
+1. Start the registry, then two contributors — one `gvisor` (after `quickstart.sh`) and one `docker`
+   anywhere, to show the gate working in both directions.
 2. Show the nodes appear in **Explore** at http://localhost:3000 with their isolation + egress
-   badges: the `microVM` node's **Rent** button is live, the `container` node's reads **"Below min"**
+   badges: the `gVisor` node's **Rent** button is live, the `container` node's reads **"Below min"**
    — the registry would reject it too (409 with the tiers it *can* place on).
 3. **Human path:** connect wallet (devnet) → Sign in → Top up (approve one SOL deposit) → paste your
    SSH public key → click **Rent** → a copyable `ssh root@… -p …` command appears with a
@@ -211,9 +219,10 @@ sets `ALLOW_PASSWORD_SSH=true` (off by default).
 4. **Autonomous path:** run `npm run client` — the agent generates an ephemeral keypair, signs in,
    tops up if low, requests the `microvm` tier (logging an explicit fallback if none offers it), runs
    a tiny training loop over SSH key auth, prints the falling loss, then releases.
-5. Show the boundary: during a lease, `uname -a` + `dmesg | head` inside it show a **guest** kernel,
-   while on the host `ps aux | grep firecracker` shows the VMM jailed under uid 30000 and `ip link`
-   shows that lease's own `rvn<n>` tap.
+5. Show the boundary: during a gVisor lease, `dmesg | head` inside it shows gVisor's own kernel banner
+   and `docker inspect` on the host shows `Runtime: runsc`. On a microVM lease, `uname -a` inside shows
+   a **guest** kernel while `ps aux | grep firecracker` shows the VMM jailed under uid 30000 with its
+   own `rvn<n>` tap.
 6. Show egress enforcement: from inside a sandbox, `curl https://not-allowlisted.example` hangs/drops
    while an allowlisted host works; the drop shows up in the per-lease `nft` counter the daemon
    reports on heartbeat.
@@ -245,12 +254,14 @@ accounts).
   key; the agent generates an ephemeral keypair), the sandbox runs `PasswordAuthentication no` /
   `PermitRootLogin prohibit-password`, and nothing guessable exists on the box. The old
   wallet-address password returns only behind `ALLOW_PASSWORD_SSH=true`, with a startup warning.
-- **Isolation is a Firecracker microVM** (see the table above): its own guest kernel under KVM, started
-  through `jailer` (chroot, uid/gid 30000, cgroup slice), with a per-lease `/30` tap and no host
-  filesystem passed in. The SSH key is injected into a per-lease *copy* of the cached rootfs, so it can
-  never reach the next lease. A node advertises only what it can deliver and the registry never places a
-  lease below the buyer's `minIsolation`. The daemon itself runs as **root** on the contributor host —
-  treat that box as dedicated
+- **Isolation is a virtualized kernel** (see the table above). Default `gvisor`: every guest syscall is
+  served by runsc's userspace sentry, with all capabilities dropped, a read-only root and `noexec`
+  scratch tmpfs — no KVM required. Optional `firecracker`: its own guest kernel under KVM through
+  `jailer` (chroot, uid/gid 30000, cgroup slice), a per-lease `/30` tap, no host filesystem passed in,
+  and the SSH key injected into a per-lease *copy* of the cached rootfs so it can never reach the next
+  lease. A node advertises only what it can deliver, and the registry enforces both the buyer's
+  `minIsolation` and its own `MARKET_MIN_ISOLATION` floor. On the microVM tier the daemon runs as
+  **root**, and on either tier it can reach the Docker socket — treat a contributor box as dedicated
   (see [contributor/docs/daemon-isolation.md](contributor/docs/daemon-isolation.md)).
 - **Egress is filtered per lease** (`EGRESS_MODE`, default `allowlist`): default-drop outbound, DNS to
   the resolver only, the buyer's allowlist, and drops of cloud metadata + RFC1918, enforced with

@@ -103,12 +103,14 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
 
 const TIER_LABEL: Record<IsolationTier, string> = {
   container: 'container',
+  'usermode-kernel': 'gVisor',
   microvm: 'microVM',
 };
 
-// Enforced minimum isolation: every lease runs in a Firecracker microVM with its own guest kernel.
-// A 'container' node (the daemon's local-dev backend, shared host kernel) is never rentable.
-const MIN_ISOLATION: IsolationTier = 'microvm';
+// Enforced minimum isolation. gVisor ('usermode-kernel') virtualizes the kernel in userspace with no
+// KVM, so any ordinary Linux VM can host a rentable node — a plain 'container' node (shared host
+// kernel) never can. microVM nodes clear the bar too, being strictly stronger.
+const MIN_ISOLATION: IsolationTier = 'usermode-kernel';
 
 export function Explore() {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
@@ -151,8 +153,8 @@ export function Explore() {
       <section>
         <h2>Explore</h2>
         <p className="sub" style={{ marginBottom: '0.75rem' }}>
-          Minimum isolation: <strong>Firecracker {TIER_LABEL[MIN_ISOLATION]}</strong> — every lease boots
-          its own guest kernel under KVM, never a shared-kernel container.
+          Minimum isolation: <strong>{TIER_LABEL[MIN_ISOLATION]} or stronger</strong> — every lease runs
+          in a virtualized kernel, never a plain shared-kernel container.
         </p>
         <div style={{ marginBottom: '0.75rem' }}>
           <input

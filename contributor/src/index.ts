@@ -19,8 +19,9 @@ const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
 const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
-// firecracker is the default because it's the only tier the marketplace rents; 'docker' is local dev.
-const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'firecracker';
+// gvisor is the default: it clears the marketplace minimum and needs no KVM, so an ordinary Linux VM
+// works. firecracker (microvm) is stronger but needs /dev/kvm; 'docker' is local dev, unrentable.
+const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'gvisor';
 // Default-deny-ish: only DNS + a buyer's allowlist leave the sandbox. Set 'open' to disable.
 const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'allowlist') as EgressPolicy['mode'];
 const REAP_INTERVAL_MS = Number(process.env.REAP_INTERVAL_MS ?? 60_000);

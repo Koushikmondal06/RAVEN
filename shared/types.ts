@@ -1,8 +1,8 @@
 /** Wire types shared by the registry, the contributor daemon, the web app and the buyer agent. */
 
 /** How strongly a sandbox is isolated from the contributor's host. Ordered weakest → strongest.
- *  `container` is a local-dev tier only — the marketplace minimum is `microvm`. */
-export type IsolationTier = 'container' | 'microvm';
+ *  `container` is a local-dev tier only — the marketplace minimum is `usermode-kernel`. */
+export type IsolationTier = 'container' | 'usermode-kernel' | 'microvm';
 
 /** Per-lease egress rules. Minimal in phase 0 (only `mode` is enforced); expanded in phase 6. */
 export type EgressPolicy = {
@@ -22,14 +22,15 @@ export type NodeInfo = {
   rateLamportsPerHour: string; // bigint over the wire
   busy: boolean;
   isolation: IsolationTier; // strongest tier this node actually delivers
-  isolationBackend: string; // docker (dev) | firecracker
+  isolationBackend: string; // docker (dev) | gvisor | firecracker
   egressMode: EgressPolicy['mode'];
 };
 
 /** Weakest → strongest, for comparing a node's tier against a lease's minimum. */
 export const TIER_RANK: Record<IsolationTier, number> = {
   container: 0,
-  microvm: 1,
+  'usermode-kernel': 1,
+  microvm: 2,
 };
 
 /** True when a node's tier is at least the requested minimum. Single source of the ordering. */
