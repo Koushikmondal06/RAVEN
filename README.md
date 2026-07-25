@@ -60,8 +60,28 @@ flowchart LR
 
 **Lease flow**
 - **Top up** — the wallet sends SOL to `PLATFORM_PAYTO`; registry confirms the tx on-chain (depositor signed, lamports landed) and credits MongoDB, idempotent by signature.
-- **Rent** — `POST /leases` queues a `start` command; the contributor's next heartbeat picks it up, runs the container + bore tunnel, posts `ready`; the lease goes `active` with an `ssh` command.
-- **Release / exhaust** — registry bills the exact seconds used (charge in MongoDB), pays the contributor on-chain, and sends a `stop` command that destroys the container.
+- **Rent** — `POST /leases` (with your SSH public key and an optional `minIsolation`) queues a `start` command; the contributor's next heartbeat picks it up, runs the sandbox + bore tunnel, posts `ready`; the lease goes `active` with an `ssh` command.
+- **Release / exhaust** — registry bills the exact seconds used (charge in MongoDB), pays the contributor on-chain, and sends a `stop` command that destroys the sandbox.
+
+## Isolation tiers
+
+Isolation is a pluggable, advertised, buyer-selectable property of a node. A node reports the
+strongest tier it can actually deliver (`SANDBOX_BACKEND` + a host capability probe at startup); a
+buyer sets a minimum on the lease and the registry never places below it. A node never advertises a
+tier it can't deliver — if the configured backend is unavailable at startup, the daemon refuses to
+register rather than downgrading.
+
+| Tier | `SANDBOX_BACKEND` | Boundary | Needs |
+|---|---|---|---|
+| `container` | `docker` | shared kernel, namespaces only | nothing (default) |
+| `usermode-kernel` | `gvisor` | syscalls intercepted in userspace (runsc) | `runsc` installed |
+| `microvm` | `kata-fc` / `firecracker` | separate guest kernel, KVM | `/dev/kvm`, nested virt |
+
+The `microvm` tier needs `/dev/kvm` — **bare metal or a nested-virt-capable instance**. Standard
+DigitalOcean droplets do not expose it (the registry + MongoDB can still live on DO). Run
+`bash contributor/scripts/preflight-microvm.sh` on a host to check, and see
+[contributor/docs/microvm-setup.md](contributor/docs/microvm-setup.md). Only `container` and
+`gvisor` are runnable without KVM; the microVM backends are written but unverified in CI.
 
 ## Run it
 
@@ -141,20 +161,33 @@ There is no root `.env` — each app reads its own: `backend/.env`, `web/.env`, 
 `MAINNET`) are baked in at build time. See each `<app>/.env.example` for its variables; flip
 `MAINNET=true` (backend, web, buyer) to target mainnet-beta instead of devnet.
 
+Isolation + egress are contributor knobs: **`SANDBOX_BACKEND`** picks the tier
+(`docker`/`gvisor`/`kata-fc`/`firecracker`, default `docker`) and the daemon fails to start if that
+backend's host requirements aren't met. **`EGRESS_MODE`** (`allowlist` default / `deny-all` / `open`)
+is applied per lease and advertised on the node, so buyers see it before renting. SSH is key-only
+unless the backend sets `ALLOW_PASSWORD_SSH=true` (off by default).
+
 ## Demo script (the money shot)
 
-1. Start the registry and one contributor (a real machine sharing CPU/RAM).
-2. Show the node appear in **Explore** at http://localhost:3000.
-3. **Human path:** connect wallet (devnet) → Sign in → Top up (approve one SOL deposit) → watch the
-   balance appear → click **Rent** → a copyable `ssh root@… -p …` command appears (password = your
-   wallet address) with a balance-driven countdown. `ssh` in. **Release** (or letting the balance hit
-   zero) bills the exact time used and destroys the sandbox.
-4. **Autonomous path:** run `npm run client` and narrate the logs — the agent signs in, tops up if
-   low, rents the cheapest node, runs a tiny training loop on someone else's machine, prints the
-   falling loss, then releases and reports how much balance it drew down. No human clicked anything.
-5. Show `docker ps` during the lease (a hardened, mount-less container) and that it's gone after
-   release. On a devnet explorer, confirm the top-up and the payout to the contributor; in MongoDB,
-   the single `charges` doc (with the billed seconds) and the `payouts` doc.
+1. Start the registry and one or two contributors on different tiers (e.g. one `docker`, one
+   `gvisor`).
+2. Show the nodes appear in **Explore** at http://localhost:3000 with their isolation + egress
+   badges. Set the minimum-isolation selector and watch weaker nodes disable their Rent button.
+3. **Human path:** connect wallet (devnet) → Sign in → Top up (approve one SOL deposit) → paste your
+   SSH public key → click **Rent** → a copyable `ssh root@… -p …` command appears with a
+   balance-driven countdown. `ssh -i your-key` in. **Release** (or letting the balance hit zero) bills
+   the exact time used and destroys the sandbox.
+4. **Autonomous path:** run `npm run client` — the agent generates an ephemeral keypair, signs in,
+   tops up if low, requests the `microvm` tier (logging an explicit fallback if none offers it), runs
+   a tiny training loop over SSH key auth, prints the falling loss, then releases.
+5. Show the boundary per tier: `docker ps` during a `container`/`gvisor` lease (a hardened, mount-less
+   container; `gvisor` shows `--runtime=runsc`), and the Firecracker/Kata guest boot in `dmesg` during
+   a `microvm` lease (a real VM, different kernel from the host).
+6. Show egress enforcement: from inside a sandbox, `curl https://not-allowlisted.example` hangs/drops
+   while an allowlisted host works; the drop shows up in the per-lease `nft` counter the daemon
+   reports on heartbeat.
+7. On a devnet explorer, confirm the top-up and the payout to the contributor; in MongoDB, the single
+   `charges` doc (with the billed seconds) and the `payouts` doc.
 
 ## What's verified vs. what needs your machine
 
@@ -177,8 +210,22 @@ accounts).
   `METER_INTERVAL_MS` whether the balance is exhausted, so worst-case over-use is one tick.
 - **Nodes + leases are in-memory:** a registry restart drops live sessions (the sockets die anyway).
   This is what keeps the DB quiet — heartbeats and the watchdog never write to MongoDB.
-- **SSH auth is a per-lease password** (your wallet address) over a throwaway root container; fine
-  for ephemeral compute, but it's a password, not a key — use a real key flow for anything sensitive.
+- **SSH auth is key-only** by default: the buyer supplies a public key (the web app takes a pasted
+  key; the agent generates an ephemeral keypair), the sandbox runs `PasswordAuthentication no` /
+  `PermitRootLogin prohibit-password`, and nothing guessable exists on the box. The old
+  wallet-address password returns only behind `ALLOW_PASSWORD_SSH=true`, with a startup warning.
+- **Isolation is tiered and enforced** (see the table above): `container` shares the host kernel,
+  `gvisor` intercepts syscalls in userspace, `microvm` gives each lease its own guest kernel over KVM.
+  A node advertises only what it can deliver and the registry never places a lease below the buyer's
+  `minIsolation`. The `docker`-socket-mount setup gives the daemon **host root** — for real machines
+  run the daemon natively (see [contributor/docs/daemon-isolation.md](contributor/docs/daemon-isolation.md)).
+- **Egress is filtered per lease** (`EGRESS_MODE`, default `allowlist`): default-drop outbound, DNS to
+  the resolver only, the buyer's allowlist, and drops of cloud metadata + RFC1918. A buyer whose lease
+  slams the firewall past `EGRESS_DROP_LIMIT` is suspended; a local kill switch tears every sandbox
+  down at once. Enforcement is wired for tap-based backends (firecracker); docker/gvisor egress is a
+  documented follow-up.
+- **Teardown is guaranteed:** the guest self-powers-off at a hard TTL, and a host reaper reconciles
+  live sandboxes against known leases every `REAP_INTERVAL_MS` — so a VM never outlives the registry.
 - **Auth:** both roles connect a Solana wallet and sign a single-use nonce (Mongo, 5-min TTL); verify
   mints a JWT (`SESSION_SECRET`). Spending a balance needs that JWT, so nobody can spend someone
   else's balance. The contributor daemon holds only its `rvn_ctb_…` bearer key — no wallet, no
