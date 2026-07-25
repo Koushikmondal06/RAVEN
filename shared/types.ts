@@ -1,5 +1,18 @@
 /** Wire types shared by the registry, the contributor daemon, the web app and the buyer agent. */
 
+/** How strongly a sandbox is isolated from the contributor's host. Ordered weakest → strongest. */
+export type IsolationTier = 'container' | 'usermode-kernel' | 'microvm';
+
+/** Per-lease egress rules. Minimal in phase 0 (only `mode` is enforced); expanded in phase 6. */
+export type EgressPolicy = {
+  mode: 'deny-all' | 'allowlist' | 'open';
+  allowCidrs?: string[];
+  allowPorts?: number[];
+  dnsResolver?: string;
+  mbitCap?: number;
+  newConnsPerMinute?: number;
+};
+
 export type NodeInfo = {
   id: string;
   label: string;

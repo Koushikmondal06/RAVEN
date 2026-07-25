@@ -1,11 +1,8 @@
 import '../../shared/env.js';
 
-import { execFile } from 'node:child_process';
 import os from 'node:os';
-import { promisify } from 'node:util';
 import type { NodeCommand } from '../../shared/types.js';
-
-const run = promisify(execFile);
+import { type SandboxBackend, type SandboxHandle, selectBackend } from './sandbox/index.js';
 
 // The daemon needs exactly two things: which registry to call, and the bearer key that identifies it.
 // No wallet, no keypair, no payout address ever runs on this box — the backend resolves RAVEN_KEY to a
@@ -18,6 +15,7 @@ const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
 const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
+const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'docker';
 const IMAGE = 'raven-sandbox';
 
 if (!RAVEN_KEY) {
@@ -25,59 +23,6 @@ if (!RAVEN_KEY) {
     'RAVEN_KEY is not set. Sign in on the "Become a Contributor" page to get one, then run with ' +
       '-e RAVEN_KEY=rvn_ctb_… (and REGISTRY_URL if the backend is not on localhost).',
   );
-}
-
-const box = (leaseId: string) => `raven-${leaseId.slice(0, 8)}`;
-const tunnelBox = (leaseId: string) => `raven-bore-${leaseId.slice(0, 8)}`;
-
-const lanIp = () =>
-  Object.values(os.networkInterfaces())
-    .flat()
-    .find((i) => i && i.family === 'IPv4' && !i.internal)?.address ?? '127.0.0.1';
-
-/** bore prints "listening at bore.pub:PORT" once the remote port is assigned. */
-async function boreTunnel(leaseId: string, hostPort: number): Promise<{ host: string; port: number }> {
-  await run('docker', [
-    'run', '-d', '--name', tunnelBox(leaseId),
-    '--add-host=host.docker.internal:host-gateway',
-    'ekzhang/bore', 'local', String(hostPort),
-    '--local-host', 'host.docker.internal',
-    '--to', BORE_SERVER,
-  ]);
-  for (let i = 0; i < 30; i++) {
-    const { stdout, stderr } = await run('docker', ['logs', tunnelBox(leaseId)]);
-    const match = `${stdout}${stderr}`.match(/listening at \S+?:(\d+)/);
-    if (match) return { host: BORE_SERVER, port: Number(match[1]) };
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error('bore never reported a remote port');
-}
-
-async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
-  const name = box(cmd.leaseId);
-  // Hardened + mount-less: no host filesystem, no privilege escalation, capped CPU/RAM/PIDs.
-  await run('docker', [
-    'run', '-d', '--name', name,
-    '-p', '0:22',
-    '--cpus', String(CPUS),
-    '--memory', `${MEM_MB}m`,
-    '--pids-limit', '512',
-    '--security-opt', 'no-new-privileges',
-    '-e', `ROOT_PASSWORD=${cmd.password}`,
-    IMAGE,
-  ]);
-  const { stdout } = await run('docker', ['port', name, '22']);
-  const hostPort = Number(stdout.trim().split('\n')[0].split(':').pop());
-  const where = TUNNEL_MODE === 'bore' ? await boreTunnel(cmd.leaseId, hostPort) : { host: lanIp(), port: hostPort };
-  await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, ...where });
-  console.log(`lease ${cmd.leaseId} up: ssh root@${where.host} -p ${where.port}`);
-}
-
-async function stop(leaseId: string) {
-  for (const name of [box(leaseId), tunnelBox(leaseId)]) {
-    await run('docker', ['rm', '-f', name]).catch(() => {});
-  }
-  console.log(`lease ${leaseId} torn down`);
 }
 
 async function post(path: string, body: unknown) {
@@ -91,8 +36,38 @@ async function post(path: string, body: unknown) {
   return res.json() as Promise<any>;
 }
 
-console.log(`building ${IMAGE} …`);
-await run('docker', ['build', '-t', IMAGE, new URL('../sandbox', import.meta.url).pathname]);
+// Fail loudly at startup if the configured backend can't deliver, rather than downgrading silently.
+const backend: SandboxBackend = await selectBackend(SANDBOX_BACKEND, {
+  image: IMAGE,
+  imageContext: new URL('../sandbox', import.meta.url).pathname,
+  tunnelMode: TUNNEL_MODE,
+  boreServer: BORE_SERVER,
+});
+
+// leaseId -> live handle, so stop() and the reaper have what they need to tear a sandbox down.
+const handles = new Map<string, SandboxHandle>();
+
+async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
+  const handle = await backend.create({
+    leaseId: cmd.leaseId,
+    cpuCores: CPUS,
+    memMib: MEM_MB,
+    diskMib: 0,
+    sshPassword: cmd.password,
+    ttlSeconds: 0,
+    egress: { mode: 'open' },
+  });
+  handles.set(cmd.leaseId, handle);
+  await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, host: handle.sshHost, port: handle.sshPort });
+  console.log(`lease ${cmd.leaseId} up: ssh root@${handle.sshHost} -p ${handle.sshPort}`);
+}
+
+async function stop(leaseId: string) {
+  const handle = handles.get(leaseId) ?? { leaseId, backend: backend.name, sshHost: '', sshPort: 0, internal: {} };
+  await backend.destroy(handle);
+  handles.delete(leaseId);
+  console.log(`lease ${leaseId} torn down`);
+}
 
 const { nodeId } = await post('/nodes/register', {
   label: LABEL,
