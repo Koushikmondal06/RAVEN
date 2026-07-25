@@ -1,8 +1,8 @@
 {
   "/Users/fusion/Code/GitRepos/RAVEN/backend/package.json": {
-    "mtime": 1784837131.5007286,
-    "ast_hash": "9fa586a277172b08ef71aec8f19464d5",
-    "semantic_hash": "9fa586a277172b08ef71aec8f19464d5"
+    "mtime": 1784974176.5099127,
+    "ast_hash": "c52797e275cce14ca2a51d51adb370ac",
+    "semantic_hash": "c52797e275cce14ca2a51d51adb370ac"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/backend/src/billing.ts": {
     "mtime": 1784837253.686757,
@@ -10,34 +10,34 @@
     "semantic_hash": "e84e4297ecdc102c510be83b800ac581"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/backend/src/db.ts": {
-    "mtime": 1784836775.121197,
-    "ast_hash": "0582c1d14675968e38fda49722c01d51",
-    "semantic_hash": "0582c1d14675968e38fda49722c01d51"
+    "mtime": 1784974071.7311387,
+    "ast_hash": "f340e1fc7dbf7fc21cc48c12b6bf6bbd",
+    "semantic_hash": "f340e1fc7dbf7fc21cc48c12b6bf6bbd"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/backend/src/index.ts": {
-    "mtime": 1784837264.1220634,
-    "ast_hash": "a174b87d02f82c0e51a0fc6f79f8b7e6",
-    "semantic_hash": "a174b87d02f82c0e51a0fc6f79f8b7e6"
+    "mtime": 1784983363.6760082,
+    "ast_hash": "9a2bddb8c29be8865b9d6d9330555818",
+    "semantic_hash": "9a2bddb8c29be8865b9d6d9330555818"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/backend/src/solana.ts": {
-    "mtime": 1784837286.3213754,
-    "ast_hash": "85cf843ce6eab28ccf4b61ee9eaa2b25",
-    "semantic_hash": "85cf843ce6eab28ccf4b61ee9eaa2b25"
+    "mtime": 1784976412.689119,
+    "ast_hash": "c81b3d7506593c5ecb65bee73290698d",
+    "semantic_hash": "c81b3d7506593c5ecb65bee73290698d"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/contributor/package.json": {
-    "mtime": 1784837131.500893,
-    "ast_hash": "fff5cc356951794627d4a8f7a8af6ec9",
-    "semantic_hash": "fff5cc356951794627d4a8f7a8af6ec9"
+    "mtime": 1784983505.8155422,
+    "ast_hash": "b70b71e368e3c2402ec67370cc277db2",
+    "semantic_hash": "b70b71e368e3c2402ec67370cc277db2"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/contributor/sandbox/start.sh": {
-    "mtime": 1784836942.9624429,
-    "ast_hash": "ab08ca81625f1a3b80ad574c2312d740",
-    "semantic_hash": "ab08ca81625f1a3b80ad574c2312d740"
+    "mtime": 1784982373.898827,
+    "ast_hash": "594b39b94167b4425f981f4fb6ddfdd0",
+    "semantic_hash": "594b39b94167b4425f981f4fb6ddfdd0"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/index.ts": {
-    "mtime": 1784836932.8073874,
-    "ast_hash": "925c07b52fa3cf5ff50cf0bdbe36e845",
-    "semantic_hash": "925c07b52fa3cf5ff50cf0bdbe36e845"
+    "mtime": 1784983450.7188358,
+    "ast_hash": "719aaac8490529eb0902d08b063b2804",
+    "semantic_hash": "719aaac8490529eb0902d08b063b2804"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/example-buyer/package.json": {
     "mtime": 1784837131.5010226,
@@ -45,24 +45,24 @@
     "semantic_hash": "e0cee22ef9705b24e4818ff503724d4d"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/example-buyer/src/index.ts": {
-    "mtime": 1784837286.321965,
-    "ast_hash": "4ca8bec16f5404628721bc7919ccf3d5",
-    "semantic_hash": "4ca8bec16f5404628721bc7919ccf3d5"
+    "mtime": 1784982474.0827575,
+    "ast_hash": "7de1f7fc3fc3a2862dceed6a1919776a",
+    "semantic_hash": "7de1f7fc3fc3a2862dceed6a1919776a"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/package.json": {
-    "mtime": 1784836730.1646686,
-    "ast_hash": "5300743e5740d17b3c71b1f942492d43",
-    "semantic_hash": "5300743e5740d17b3c71b1f942492d43"
+    "mtime": 1784982609.7713685,
+    "ast_hash": "31eba2a7faba160b0c68a6a11ab264e0",
+    "semantic_hash": "31eba2a7faba160b0c68a6a11ab264e0"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/shared/env.ts": {
-    "mtime": 1784836811.852185,
-    "ast_hash": "0c2010fee16459c15999074f47e159fe",
-    "semantic_hash": "0c2010fee16459c15999074f47e159fe"
+    "mtime": 1784978791.9830961,
+    "ast_hash": "fce7d1bf1ca08ec00a3dec7ea40e409b",
+    "semantic_hash": "fce7d1bf1ca08ec00a3dec7ea40e409b"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/shared/types.ts": {
-    "mtime": 1784836742.556406,
-    "ast_hash": "026cc1a59a142d86faa9f9d34bab7b30",
-    "semantic_hash": "026cc1a59a142d86faa9f9d34bab7b30"
+    "mtime": 1784983289.226208,
+    "ast_hash": "8d6c579f55b7517b5b7e49a1a912f86e",
+    "semantic_hash": "8d6c579f55b7517b5b7e49a1a912f86e"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/tsconfig.json": {
     "mtime": 1784836735.7295103,
@@ -70,49 +70,24 @@
     "semantic_hash": "1c3ba84840d8f5134944b65f97e0396e"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/web/package.json": {
-    "mtime": 1784837051.8641596,
-    "ast_hash": "fd3d072dbb878488b509341b076a56f1",
-    "semantic_hash": "fd3d072dbb878488b509341b076a56f1"
-  },
-  "/Users/fusion/Code/GitRepos/RAVEN/web/src/App.tsx": {
-    "mtime": 1784837047.8755867,
-    "ast_hash": "cf0c4d6d47ab6c7eb3337e9f1fa97dfb",
-    "semantic_hash": "cf0c4d6d47ab6c7eb3337e9f1fa97dfb"
-  },
-  "/Users/fusion/Code/GitRepos/RAVEN/web/src/api.ts": {
-    "mtime": 1784836994.0845466,
-    "ast_hash": "4269b5b7226c6994c7bdfe5ba6cb28d6",
-    "semantic_hash": "4269b5b7226c6994c7bdfe5ba6cb28d6"
-  },
-  "/Users/fusion/Code/GitRepos/RAVEN/web/src/main.tsx": {
-    "mtime": 1784837000.1847975,
-    "ast_hash": "1aa614465482457a7fe04321a502a3e2",
-    "semantic_hash": "1aa614465482457a7fe04321a502a3e2"
+    "mtime": 1784977557.857596,
+    "ast_hash": "b801beb5716962d8b7de9a010c3ae53d",
+    "semantic_hash": "b801beb5716962d8b7de9a010c3ae53d"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/web/tsconfig.json": {
-    "mtime": 1784836974.183752,
-    "ast_hash": "c8ef708ac0964b5a02c77ab9737d905b",
-    "semantic_hash": "c8ef708ac0964b5a02c77ab9737d905b"
-  },
-  "/Users/fusion/Code/GitRepos/RAVEN/web/vite.config.ts": {
-    "mtime": 1784836969.0777514,
-    "ast_hash": "d0e482320083f24515e6e916018bd293",
-    "semantic_hash": "d0e482320083f24515e6e916018bd293"
+    "mtime": 1784963681.5331979,
+    "ast_hash": "9b6cd4b083fe6212ebfa8f379579c3f7",
+    "semantic_hash": "9b6cd4b083fe6212ebfa8f379579c3f7"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/README.md": {
-    "mtime": 1784837357.7467043,
-    "ast_hash": "ffd7ae683eb91440699279bd8c8a85c1",
-    "semantic_hash": "ffd7ae683eb91440699279bd8c8a85c1"
+    "mtime": 1784983750.0657666,
+    "ast_hash": "fa65a695c5fa9cd41764ee89f8d1ffff",
+    "semantic_hash": "fa65a695c5fa9cd41764ee89f8d1ffff"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/docker-compose.yml": {
-    "mtime": 1784837151.6348822,
-    "ast_hash": "bb0411bd2ae8cd860ec281b2c804281d",
-    "semantic_hash": "bb0411bd2ae8cd860ec281b2c804281d"
-  },
-  "/Users/fusion/Code/GitRepos/RAVEN/web/index.html": {
-    "mtime": 1784836985.3840704,
-    "ast_hash": "9296c3933135f644fe3a91a000d0c940",
-    "semantic_hash": "9296c3933135f644fe3a91a000d0c940"
+    "mtime": 1784978860.559174,
+    "ast_hash": "c6d25fbdf71063811e6b6aa21989cfda",
+    "semantic_hash": "c6d25fbdf71063811e6b6aa21989cfda"
   },
   "/Users/fusion/Code/GitRepos/RAVEN/example-buyer/tsconfig.json": {
     "mtime": 1784836735.7295103,
@@ -128,5 +103,155 @@
     "mtime": 1784837151.6348825,
     "ast_hash": "bb0411bd2ae8cd860ec281b2c804281d",
     "semantic_hash": "bb0411bd2ae8cd860ec281b2c804281d"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/backend/src/auth.ts": {
+    "mtime": 1784974088.884224,
+    "ast_hash": "1234c01034efc2c97a991d4a8347c8b3",
+    "semantic_hash": "1234c01034efc2c97a991d4a8347c8b3"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/scripts/fc-down.sh": {
+    "mtime": 1784983124.632501,
+    "ast_hash": "fc37c4766b67c5ad09997757f527ca3e",
+    "semantic_hash": "fc37c4766b67c5ad09997757f527ca3e"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/scripts/fc-list.sh": {
+    "mtime": 1784983131.0161407,
+    "ast_hash": "6f73b5de716ad221ba8eb65ff52477bf",
+    "semantic_hash": "6f73b5de716ad221ba8eb65ff52477bf"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/scripts/fc-rootfs.sh": {
+    "mtime": 1784983086.955995,
+    "ast_hash": "08090ceca37b5bad558696a291a5530e",
+    "semantic_hash": "08090ceca37b5bad558696a291a5530e"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/scripts/fc-up.sh": {
+    "mtime": 1784983462.6027026,
+    "ast_hash": "2cd038825c406135cfc67926e6c4ee9f",
+    "semantic_hash": "2cd038825c406135cfc67926e6c4ee9f"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/scripts/preflight-microvm.sh": {
+    "mtime": 1784982937.853153,
+    "ast_hash": "7c2106ab0f2e87f99435e23ef2e4d135",
+    "semantic_hash": "7c2106ab0f2e87f99435e23ef2e4d135"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/net/nft.test.ts": {
+    "mtime": 1784983248.3807583,
+    "ast_hash": "883c214533b23fa1841a15d7a4fee3db",
+    "semantic_hash": "883c214533b23fa1841a15d7a4fee3db"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/net/nft.ts": {
+    "mtime": 1784983233.9906106,
+    "ast_hash": "cb40f3c7d54c1a66ddd9c28aeec426e8",
+    "semantic_hash": "cb40f3c7d54c1a66ddd9c28aeec426e8"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/docker.ts": {
+    "mtime": 1784982727.510524,
+    "ast_hash": "d4b262dde268d427e5b9feec48e4730c",
+    "semantic_hash": "d4b262dde268d427e5b9feec48e4730c"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/firecracker.ts": {
+    "mtime": 1784983470.5008428,
+    "ast_hash": "5a72fb9a828f3f574518cbe6dba50593",
+    "semantic_hash": "5a72fb9a828f3f574518cbe6dba50593"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/gvisor.ts": {
+    "mtime": 1784982747.536614,
+    "ast_hash": "2634d5756c2948a87115076e44e626ff",
+    "semantic_hash": "2634d5756c2948a87115076e44e626ff"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/index.ts": {
+    "mtime": 1784983147.0146382,
+    "ast_hash": "5a6f4630e5c3e53ca2be745ed9a52e33",
+    "semantic_hash": "5a6f4630e5c3e53ca2be745ed9a52e33"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/kata-fc.ts": {
+    "mtime": 1784982914.5653992,
+    "ast_hash": "26f49625296e08d72a444752e736e6bd",
+    "semantic_hash": "26f49625296e08d72a444752e736e6bd"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/oci.ts": {
+    "mtime": 1784982713.2250953,
+    "ast_hash": "77939e65a449c4a3765f04d8b635e11a",
+    "semantic_hash": "77939e65a449c4a3765f04d8b635e11a"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/probe.ts": {
+    "mtime": 1784981599.3205326,
+    "ast_hash": "6df11a568829b074ac9dcdbe0cd34ac7",
+    "semantic_hash": "6df11a568829b074ac9dcdbe0cd34ac7"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/reaper.test.ts": {
+    "mtime": 1784982568.0930655,
+    "ast_hash": "212be42e666eff3680516cba5448ef4c",
+    "semantic_hash": "212be42e666eff3680516cba5448ef4c"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/reaper.ts": {
+    "mtime": 1784982551.0684235,
+    "ast_hash": "ec55d6c328487851582ffef8251332f0",
+    "semantic_hash": "ec55d6c328487851582ffef8251332f0"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/src/sandbox/types.ts": {
+    "mtime": 1784981567.275956,
+    "ast_hash": "8719fb608e99f1c08a9b29b593a19885",
+    "semantic_hash": "8719fb608e99f1c08a9b29b593a19885"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/shared/cluster.ts": {
+    "mtime": 1784976400.9674296,
+    "ast_hash": "14f2030f7ca08139bf1685753762cc83",
+    "semantic_hash": "14f2030f7ca08139bf1685753762cc83"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/app/contributor/page.tsx": {
+    "mtime": 1784982851.1319728,
+    "ast_hash": "906b018fb48777f37b14230890f5d410",
+    "semantic_hash": "906b018fb48777f37b14230890f5d410"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/app/layout.tsx": {
+    "mtime": 1784976477.913441,
+    "ast_hash": "a772f9b703cd68b275193dac0289e4da",
+    "semantic_hash": "a772f9b703cd68b275193dac0289e4da"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/app/page.tsx": {
+    "mtime": 1784982432.5351067,
+    "ast_hash": "7c0cf012c2bb7d643af04961274e9cbb",
+    "semantic_hash": "7c0cf012c2bb7d643af04961274e9cbb"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/app/providers.tsx": {
+    "mtime": 1784977564.8993511,
+    "ast_hash": "52b81d6605008e59fb2f205608d5f843",
+    "semantic_hash": "52b81d6605008e59fb2f205608d5f843"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/lib/AuthPanel.tsx": {
+    "mtime": 1784977586.9680076,
+    "ast_hash": "642b7dbd18a2e8a0f135cf6557cd2d91",
+    "semantic_hash": "642b7dbd18a2e8a0f135cf6557cd2d91"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/lib/api.ts": {
+    "mtime": 1784977629.3091247,
+    "ast_hash": "82151cd20af34501f50247dccf5b2a56",
+    "semantic_hash": "82151cd20af34501f50247dccf5b2a56"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/next-env.d.ts": {
+    "mtime": 1784978917.4492202,
+    "ast_hash": "2a74d3909800ca5467fa83b0ab4a4890",
+    "semantic_hash": "2a74d3909800ca5467fa83b0ab4a4890"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/web/next.config.ts": {
+    "mtime": 1784978800.3291602,
+    "ast_hash": "7ffa2a8a8f94d46c14c50cdd9a3d6970",
+    "semantic_hash": "7ffa2a8a8f94d46c14c50cdd9a3d6970"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/.github/workflows/release-images.yml": {
+    "mtime": 1784979520.2650325,
+    "ast_hash": "22835dce7304364b9586da728019470c",
+    "semantic_hash": "22835dce7304364b9586da728019470c"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/docs/daemon-isolation.md": {
+    "mtime": 1784982840.2267816,
+    "ast_hash": "d33bdf6bb794739ec3edbe9fe2d1aa58",
+    "semantic_hash": "d33bdf6bb794739ec3edbe9fe2d1aa58"
+  },
+  "/Users/fusion/Code/GitRepos/RAVEN/contributor/docs/microvm-setup.md": {
+    "mtime": 1784982955.9373882,
+    "ast_hash": "533c42c7cc0abb5d86db1c39772d3f5f",
+    "semantic_hash": "533c42c7cc0abb5d86db1c39772d3f5f"
   }
 }

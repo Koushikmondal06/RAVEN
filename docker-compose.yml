@@ -1,12 +1,17 @@
 services:
   backend:
     build: { context: ., dockerfile: backend/Dockerfile }
-    env_file: backend/.env
+    # required:false → running one service doesn't demand the others' .env exist.
+    env_file:
+      - path: backend/.env
+        required: false
     ports: ['4000:4000']
 
   contributor:
     build: { context: ., dockerfile: contributor/Dockerfile }
-    env_file: contributor/.env # needs RAVEN_KEY (from the /contributor page) + REGISTRY_URL
+    env_file: # needs RAVEN_KEY (from the /contributor page) + REGISTRY_URL
+      - path: contributor/.env
+        required: false
     # Sandboxes run as sibling containers on the host daemon — nothing extra to install.
     volumes: ['/var/run/docker.sock:/var/run/docker.sock']
     # Only needed for TUNNEL_MODE=local (and broken on Docker Desktop — run natively there instead).
@@ -27,4 +32,6 @@ services:
 
   buyer:
     build: { context: ., dockerfile: example-buyer/Dockerfile }
-    env_file: example-buyer/.env
+    env_file:
+      - path: example-buyer/.env
+        required: false
