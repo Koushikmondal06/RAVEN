@@ -7,8 +7,13 @@ import type { SandboxHandle, SandboxSpec } from './types.js';
 
 export const run = promisify(execFile);
 
-export const box = (leaseId: string) => `raven-${leaseId.slice(0, 8)}`;
-export const tunnelBox = (leaseId: string) => `raven-bore-${leaseId.slice(0, 8)}`;
+// Names are short for humans reading `docker ps`; they are NOT how the reaper identifies a sandbox.
+// The container name only carries the first 8 chars of the lease id, so reconstructing an id from a
+// name yields something that never matches the full UUID the daemon holds — which made the reaper
+// destroy every live lease one tick after it started. The full id lives in this label instead.
+export const LEASE_LABEL = 'raven.lease';
+export const box = (leaseId: string) => `raven-sb-${leaseId.slice(0, 8)}`;
+export const tunnelBox = (leaseId: string) => `raven-tun-${leaseId.slice(0, 8)}`;
 
 export const lanIp = () =>
   Object.values(os.networkInterfaces())
@@ -45,6 +50,8 @@ export async function ensureImage(image: string, context: string) {
 export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number): Promise<{ host: string; port: number }> {
   await run('docker', [
     'run', '-d', '--name', tunnelBox(leaseId),
+    '--label', `${LEASE_LABEL}=${leaseId}`,
+    '--label', 'raven.role=tunnel',
     '--add-host=host.docker.internal:host-gateway',
     // -e, not --secret: an argv secret is visible to every user on the host via `docker inspect`/ps.
     ...(cfg.boreSecret ? ['-e', `BORE_SECRET=${cfg.boreSecret}`] : []),
@@ -101,6 +108,8 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
   const name = box(spec.leaseId);
   await run('docker', [
     'run', '-d', '--name', name,
+    '--label', `${LEASE_LABEL}=${spec.leaseId}`,
+    '--label', 'raven.role=sandbox',
     // Deliberately NO restart policy. `-p 0:22` picks a random host port, so a restart would land on
     // a different one and orphan the tunnel — and it would resurrect the container after start.sh's
     // TTL self-destruct, breaking the guarantee that a sandbox never outlives its lease.
@@ -137,14 +146,33 @@ export async function destroyContainer(leaseId: string): Promise<void> {
   }
 }
 
+/**
+ * Every live sandbox, keyed by its FULL lease id.
+ *
+ * Filtered by label, never by name. A `name=raven-` filter also matches this daemon's own compose
+ * container (`raven-contributor-1`) and its siblings (`raven-backend-1`, `raven-web-1`) — the reaper
+ * would happily tear down the whole stack it is running inside.
+ */
 export async function listContainers(): Promise<SandboxHandle[]> {
-  const { stdout } = await run('docker', ['ps', '--filter', 'name=raven-', '--format', '{{.Names}}']);
-  return stdout
+  const { stdout } = await run('docker', [
+    'ps',
+    '--filter',
+    'label=raven.role=sandbox',
+    '--format',
+    `{{.Names}}\t{{.Label "${LEASE_LABEL}"}}`,
+  ]);
+  return parseSandboxRows(stdout);
+}
+
+/** Pure half of listContainers, so the id it reports can be tested without a Docker daemon. */
+export function parseSandboxRows(psOutput: string): SandboxHandle[] {
+  return psOutput
     .split('\n')
-    .map((n) => n.trim())
-    .filter((n) => n.startsWith('raven-') && !n.startsWith('raven-bore-'))
-    .map((name) => ({
-      leaseId: name.replace(/^raven-/, ''),
+    .map((line) => line.trim().split('\t'))
+    // No label = not ours (an unlabelled container, or one from an older daemon). Never reap it.
+    .filter(([name, leaseId]) => name && leaseId)
+    .map(([name, leaseId]) => ({
+      leaseId,
       sshHost: '',
       sshPort: 0,
       internal: { container: name },
