@@ -1,4 +1,11 @@
+import { config as loadEnv } from 'dotenv';
 import type { NextConfig } from 'next';
+
+// Next only reads web/.env; the rest of the monorepo reads the repo-root .env. Load web/.env first
+// (it wins), then the root, so NEXT_PUBLIC_* set in either place reaches the build. dotenv never
+// overrides an already-set var, so web/.env and inline FOO=bar both take precedence over root.
+loadEnv({ path: '.env' });
+loadEnv({ path: '../.env' });
 
 // Static export: the wallet stack is client-only, so there is no server to run — `next build`
 // emits a plain static bundle to out/, served by nginx exactly like the old Vite build.
