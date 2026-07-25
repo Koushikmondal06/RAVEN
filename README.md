@@ -31,10 +31,8 @@ flowchart LR
     registry -- "confirm deposit · send payout" --> solana
     registry -- "start/stop via heartbeat reply" --> contributor
     contributor -- "register · ready · heartbeat (RAVEN_KEY)" --> registry
-    registry -. "tunnel relay + secret, on register" .-> contributor
     contributor -- "create / destroy / list (host docker.sock)" --> sandbox
-    sandbox -- "bore outbound tunnel" --> relay
-    relay["bore/ · private tunnel relay (:7835)<br/>operator-run, secret-gated"]
+    sandbox -- "bore outbound tunnel" --> contributor
     agent -. "ssh -i key root@bore -p …" .-> sandbox
     web -. "copyable ssh command" .-> sandbox
 
@@ -67,8 +65,7 @@ flowchart LR
 
 Every lease is one **Docker container** on the contributor's machine, started by the daemon through
 the host's Docker socket and reachable over an outbound [bore](https://github.com/ekzhang/bore)
-tunnel to the operator's own relay (the `bore` compose service) — no inbound ports on the
-contributor's side, and no third-party relay in the path.
+tunnel — no inbound ports on the contributor's side.
 
 It is hardened as far as this image allows: no host filesystem mounted, `--security-opt
 no-new-privileges`, capped CPU/RAM/PIDs, and a hard self-destruct TTL. `--cap-drop=ALL` and a
@@ -134,7 +131,7 @@ contributor runs on each machine sharing compute and points at that backend via 
 cp backend/.env.example backend/.env
 cp contributor/.env.example contributor/.env
 cp example-buyer/.env.example example-buyer/.env
-docker compose up -d --build backend bore    # registry :4000 + tunnel relay :7835
+docker compose up -d --build backend         # the registry            → :4000
 docker compose --env-file web/.env up -d --build web   # static SPA behind nginx → :3000
 docker compose up -d --build contributor     # share THIS machine's compute
 docker compose run  --rm   buyer             # one-shot autonomous buyer
@@ -152,13 +149,12 @@ static, so `http://localhost:4000` means the *visitor's* machine, and any plain-
 blocked as mixed content on an `https` page — the requests never leave the browser, which is why the
 backend log stays silent. Only set an absolute URL when the registry has its own https hostname.
 
-**The `bore` service is your own tunnel relay.** Each lease's SSH port is published through it, so
-buyer traffic never transits the public `bore.pub`. Set `BORE_SERVER` (this machine's public hostname)
-and `BORE_SECRET` in `backend/.env`; the registry hands both to every daemon over its authenticated
-register call, so contributors configure nothing and the secret never reaches the web bundle. Open
-**7835** (bore's control port) and **20000-20100** (the tunnel range) to the internet. Leave
-`BORE_SERVER` unset and everything falls back to public `bore.pub` — fine for a demo, and the daemon
-logs a warning saying so.
+**Tunnels go through the public `bore.pub` by default** — nothing to run and no ports to open on
+either side, which is why it's the default. The tradeoff is that every buyer's SSH session transits a
+third party, and `bore.pub` offers no uptime guarantee. To run your own relay instead, start a
+`bore server` on a reachable host and set `BORE_SERVER` + `BORE_SECRET` in `backend/.env`: the
+registry hands both to each daemon over its authenticated register call, so contributors configure
+nothing and the secret never reaches the web bundle.
 
 **The `contributor` service mounts the Docker socket** so the daemon can start each lease as a sibling
 container on the host's Docker daemon rather than nested inside its own. That mount is equivalent to

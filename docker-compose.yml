@@ -7,21 +7,6 @@ services:
     env_file: backend/.env
     ports: ['4000:4000']
 
-  # Private tunnel relay. Every lease's SSH port is published through this instead of the public
-  # bore.pub, so buyer traffic never transits a third party. 7835 is bore's fixed control port; the
-  # 20000-20100 range is what it hands out to tunnels, so both must be reachable from the internet.
-  # BORE_SECRET gates who may open a tunnel — set it in backend/.env; the registry passes it to each
-  # authenticated daemon at register time, so it is never published in the web bundle.
-  bore:
-    image: ekzhang/bore
-    # BORE_SECRET comes from backend/.env — bore reads it from the environment, so it is never a
-    # compose ${interpolation} (those resolve from the shell, not from env_file, and a missing one
-    # would fail every service in this file).
-    env_file: backend/.env
-    command: server --min-port 20000 --max-port 20100
-    ports: ['7835:7835', '20000-20100:20000-20100']
-    restart: unless-stopped
-
   web:
     build:
       context: .

@@ -65,16 +65,45 @@ export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number):
   throw new Error(`bore never reported a remote port (relay ${cfg.boreServer})`);
 }
 
-/** Runs the sandbox container, wires the tunnel, returns a handle.
+/**
+ * Blocks until sshd is actually accepting connections, or explains why it never will.
  *
- *  Hardened as far as a shared-kernel container goes: no host filesystem, no new privileges, all
- *  capabilities dropped, read-only root with noexec/nosuid scratch, capped CPU/RAM/PIDs. The guest
- *  still shares this host's kernel — a kernel escape lands on the contributor's machine. */
+ * Without this the daemon posts `ready` the moment bore reports a port, so a buyer can connect
+ * before `ssh-keygen -A` has finished — or to a container that already died — and both look
+ * identical from their side: "Connection closed by <relay ip>". Reading the container's own log is
+ * the one signal that works from inside the daemon container, where the published port is not
+ * reachable on 127.0.0.1.
+ */
+async function waitForSshd(name: string, timeoutMs = 30_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { stdout: state } = await run('docker', ['inspect', '-f', '{{.State.Running}}', name]).catch(() => ({
+      stdout: 'false',
+    }));
+    const { stdout, stderr } = await run('docker', ['logs', '--tail', '40', name]).catch(() => ({ stdout: '', stderr: '' }));
+    const log = `${stdout}${stderr}`;
+    if (/Server listening on .* port 22/.test(log)) return;
+    if (state.trim() !== 'true') {
+      // Exited during boot. Its own last words are far more useful than a timeout would be.
+      throw new Error(`sandbox exited before sshd started: ${log.trim().split('\n').slice(-3).join(' | ') || 'no output'}`);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`sandbox sshd did not come up within ${timeoutMs / 1000}s`);
+}
+
+/** Runs the sandbox container, waits for sshd, wires the tunnel, returns a handle.
+ *
+ *  Hardened as far as this image allows: no host filesystem, no new privileges, capped CPU/RAM/PIDs.
+ *  The guest shares this host's kernel — a kernel escape lands on the contributor's machine. */
 export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<SandboxHandle> {
   await ensureImage(cfg.image, cfg.imageContext);
   const name = box(spec.leaseId);
   await run('docker', [
     'run', '-d', '--name', name,
+    // Deliberately NO restart policy. `-p 0:22` picks a random host port, so a restart would land on
+    // a different one and orphan the tunnel — and it would resurrect the container after start.sh's
+    // TTL self-destruct, breaking the guarantee that a sandbox never outlives its lease.
     '-p', '0:22',
     '--cpus', String(spec.cpuCores),
     '--memory', `${spec.memMib}m`,
@@ -89,6 +118,8 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
     ...sandboxEnv(spec),
     cfg.image,
   ]);
+  // Gate on readiness BEFORE opening the tunnel: no point publishing a port nothing answers on.
+  await waitForSshd(name);
   const { stdout } = await run('docker', ['port', name, '22']);
   const hostPort = Number(stdout.trim().split('\n')[0].split(':').pop());
   const where = cfg.tunnelMode === 'bore' ? await boreTunnel(cfg, spec.leaseId, hostPort) : { host: lanIp(), port: hostPort };
