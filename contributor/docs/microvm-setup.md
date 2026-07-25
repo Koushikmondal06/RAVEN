@@ -1,9 +1,10 @@
-# microVM tier setup (Kata + Firecracker)
+# microVM tier setup (Firecracker + jailer)
 
-The `microvm` tier gives each lease its own guest kernel over KVM, so a hostile root inside the
-sandbox is contained by a VM boundary, not just namespaces. It needs hardware virtualization.
+The `microvm` tier gives each lease its own guest kernel under KVM, so hostile root inside the sandbox
+is contained by a virtual machine boundary rather than namespaces. It is the only tier the marketplace
+rents. `SANDBOX_BACKEND=firecracker`.
 
-Run the preflight first — it prints one actionable line per missing piece:
+Run the preflight first — it prints one actionable line per missing piece and exits non-zero:
 
 ```bash
 bash contributor/scripts/preflight-microvm.sh
@@ -11,36 +12,90 @@ bash contributor/scripts/preflight-microvm.sh
 
 ## The hard requirement: /dev/kvm
 
-The microVM tier needs `/dev/kvm`, which means **bare metal or a nested-virt-capable instance**.
+Firecracker is a KVM virtual machine monitor, so the host must expose `/dev/kvm` — **bare metal or a
+nested-virt-capable instance.**
 
-> Standard DigitalOcean droplets do NOT expose `/dev/kvm`. The registry and MongoDB can live on a DO
-> droplet fine; the `microvm` tier cannot. Use bare metal (Equinix, Hetzner dedicated, a homelab box)
-> or a cloud instance that advertises nested virtualization.
+> Does **not** work: macOS, Apple silicon under Colima/Lima, standard DigitalOcean droplets, most
+> shared cloud VMs. The RAVEN registry, MongoDB and the web app run fine on an ordinary droplet; only
+> the contributor daemon needs KVM.
+>
+> Works: Hetzner/OVH dedicated, AWS EC2 `*.metal`, GCP with nested virtualization enabled on the
+> image, your own hardware.
 
-If `/dev/kvm` is absent, `SANDBOX_BACKEND=kata-fc` fails at startup by design — a node never
-advertises a tier it cannot deliver. Fall back to `SANDBOX_BACKEND=gvisor` (no KVM needed) on those
-hosts.
+If KVM is missing the daemon **fails at startup by design** — a node never advertises a tier it cannot
+deliver. Your options are a different host, or `SANDBOX_BACKEND=docker` for local development only
+(shared kernel, shows "Below min", not rentable).
 
-## Host prerequisites
+## Setup
 
-Per distro, roughly:
+One command, idempotent:
 
-- **Ubuntu/Debian:** install `containerd`, `nerdctl`, Kata Containers (`kata-runtime`,
-  `containerd-shim-kata-fc-v2`), and a Firecracker binary; add the daemon user to the `kvm` group;
-  configure the `io.containerd.kata-fc.v2` runtime with Firecracker as the hypervisor in
-  `/etc/kata-containers/configuration-fc.toml`.
-- **Fedora/RHEL:** same components via `dnf`; SELinux may need a permissive/adjusted policy for the
-  shim.
+```bash
+sudo bash contributor/scripts/setup-firecracker.sh
+```
 
-## What the backend enforces
+It installs `firecracker` + `jailer` (pinned release, `x86_64`/`aarch64`), fetches an uncompressed
+guest kernel to `/var/lib/raven/vmlinux`, installs `iproute2` / `e2fsprogs` / `nftables` when apt is
+available, creates `/var/lib/raven/{rootfs,slots}` and `/srv/jailer`, enables `net.ipv4.ip_forward`,
+and installs the `raven_nat` nftables table.
 
-- One guest kernel per lease via `--runtime io.containerd.kata-fc.v2`.
-- cgroup v2 limits on the VMM process (`--cpus`, `--memory`, `--pids-limit`).
-- Ephemeral rootfs, `--read-only` with a `noexec,nosuid` tmpfs for scratch. No shared writable
-  mounts, ever.
-- The image is built into containerd's store with `nerdctl build` (separate from Docker's store).
+Override paths with `FC_KERNEL`, `FC_CACHE_DIR`, `FC_STATE`, `FC_CHROOT`, and the release with
+`FC_VERSION`. Bring your own kernel by pointing `FC_KERNEL` at any uncompressed `vmlinux` built with
+virtio and `CONFIG_IP_PNP` (the `ip=` boot arg configures the guest's interface).
+
+## How a lease boots
+
+1. **rootfs** — `fc-rootfs.sh` builds the sandbox image with Docker, `docker export`s it, and writes an
+   ext4 filesystem with `mkfs.ext4 -d`. Cached by image digest, published with an atomic rename, and
+   never mutated afterwards.
+2. **network slot** — `fc-up.sh` claims the lowest free slot `1..250` with `mkdir` (atomic), giving the
+   lease a tap `rvn<n>` and the `/30` `172.31.<n>.0/30` (host `.1`, guest `.2`). The slot directory
+   records which lease owns it, so teardown and the reaper can find the tap again.
+3. **per-lease copy** — the cached rootfs is copied into the jail *first*, then that copy is
+   loop-mounted to inject `authorized_keys`, `/etc/resolv.conf`, and `/etc/raven-net.env` (TTL, IPs).
+   The cache stays pristine, so one buyer's SSH key never reaches the next lease.
+4. **launch** — always through `jailer`: its own chroot under `/srv/jailer/firecracker/<leaseId>`,
+   uid/gid 30000, cgroup v2 slice, `--resource-limit fsize`. Never `firecracker` directly. The pid is
+   written to `firecracker.pid`; the VMM's own output goes to `firecracker.log`.
+5. **readiness** — the script polls the guest's port 22 and only then reports success, so the registry
+   never marks a lease `active` before sshd answers.
+6. **reachability** — the `/30` is host-local, so the guest's port 22 is published to the buyer over a
+   bore tunnel (`TUNNEL_MODE=bore`, the default). With `TUNNEL_MODE=local` the guest IP is returned
+   directly, which only helps on the same host or LAN.
+7. **guest init** — the kernel runs `init=/start.sh`, the same script the container tier uses as its
+   `CMD`. It mounts `/proc`, `/sys`, `/dev`, `/dev/pts`, sources `/etc/raven-net.env`, configures
+   key-only sshd, and arms the TTL self-poweroff.
+
+## Egress
+
+Two separate nftables tables, on purpose:
+
+- **`raven_nat`** (installed once by the setup script) masquerades `172.31.0.0/16` so guests have a
+  route out at all.
+- **`raven_<leaseId>`** (written per lease by the daemon, `src/net/nft.ts`) is the actual policy on that
+  lease's tap: default-drop forward, DNS to the resolver, the buyer's allowlist, cloud-metadata and
+  RFC1918 dropped, a new-connection rate limit, and a drop counter reported on every heartbeat.
+
+## Teardown
+
+`fc-down.sh` is idempotent: TERM then KILL the pid (with a `pkill -f "firecracker.*--id <lease>"`
+backstop), free the network slot and delete its tap, remove the jail. The reaper calls the same path
+for orphans, and `fc-list.sh` hands it the tap name so the lease's firewall is removed too. The guest
+also powers itself off at its hard TTL, so a VM never outlives the registry.
 
 ## Verifying isolation
 
-After a lease starts, `ssh` in and confirm you are in a VM, not a container: `dmesg | head` should
-show a Firecracker/Kata guest kernel boot, and the kernel version should differ from the host's.
+On the host, during a lease:
+
+```bash
+ps aux | grep firecracker      # jailed VMM running as uid 30000
+ip link                        # the lease's rvn<n> tap
+nft list tables                # raven_nat plus raven_<leaseId>
+```
+
+Inside the lease:
+
+```bash
+uname -a                       # a guest kernel, not the host's
+dmesg | head                   # Firecracker guest boot
+```

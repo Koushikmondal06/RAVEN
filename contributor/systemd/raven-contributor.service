@@ -1,17 +1,15 @@
-# Run the contributor daemon natively (NOT inside a container with the Docker socket bind-mounted).
-# A container with /var/run/docker.sock mounted gives that container host root — anything that
-# compromises the daemon owns the machine, no escape needed. Running natively under systemd with the
-# hardening below limits the daemon's own reach and removes the socket-in-a-container hole.
+# Run the contributor daemon natively. The Firecracker backend needs root on the host: it creates a
+# tap per lease (CAP_NET_ADMIN) and loop-mounts each lease's rootfs (CAP_SYS_ADMIN), and it launches
+# every VM through `jailer`, which is what actually confines the guest. This unit confines the
+# *daemon*; jailer + KVM confine the *buyer*.
 #
-#   sudo useradd -r -G docker -d /opt/raven raven      # daemon user, in the docker group
-#   sudo install -Dm600 contributor.env /etc/raven/contributor.env   # RAVEN_KEY, REGISTRY_URL, …
+#   sudo bash contributor/scripts/setup-firecracker.sh              # firecracker, jailer, kernel, NAT
+#   sudo install -Dm600 contributor.env /etc/raven/contributor.env  # RAVEN_KEY, REGISTRY_URL, …
 #   sudo cp contributor/systemd/raven-contributor.service /etc/systemd/system/
 #   sudo systemctl enable --now raven-contributor
 #
-# Note: membership in the `docker` group is equivalent to root on this host — inherent to driving
-# Docker. The gvisor/microvm tiers are what actually contain the *buyer*; this unit contains the
-# *daemon*. For the strongest separation, run the microvm backend so the sandbox never shares your
-# kernel, and keep this daemon on a machine you are willing to treat as dedicated.
+# Do NOT run this daemon inside a container with /var/run/docker.sock bind-mounted: that mount gives
+# the container host root, so a bug in the daemon owns the machine with no escape needed.
 
 [Unit]
 Description=RAVEN contributor daemon
@@ -21,24 +19,24 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=raven
-Group=docker
+# root, not a service user: see the header. The sandbox boundary is the microVM, not this process.
+User=root
 WorkingDirectory=/opt/raven/contributor
 EnvironmentFile=/etc/raven/contributor.env
 ExecStart=/usr/bin/npx tsx src/index.ts
 Restart=on-failure
 RestartSec=5
 
-# Hardening
+# Hardening. jailer only ever *drops* privileges, so NoNewPrivileges is safe to keep.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-PrivateTmp=true
-ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-# The daemon only needs to write its own tree and reach the Docker socket.
-ReadWritePaths=/opt/raven /var/run/docker.sock
+# ProtectKernelTunables is off: the guest NAT path needs net.ipv4.ip_forward.
+# PrivateTmp is off: the rootfs loop-mount uses a tmpdir that the jailed VM must be able to see.
+# The daemon writes its own tree, the rootfs cache + network slots, and the jailer chroots.
+ReadWritePaths=/opt/raven /var/lib/raven /srv/jailer /var/run/docker.sock
 
 [Install]
 WantedBy=multi-user.target

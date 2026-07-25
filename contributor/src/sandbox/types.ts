@@ -1,5 +1,5 @@
-/** The pluggable sandbox boundary. Every backend (docker, gvisor, kata-fc, firecracker) implements
- *  SandboxBackend; the daemon only ever talks to a sandbox through this interface. */
+/** The pluggable sandbox boundary. Both backends (firecracker for real leases, docker for local dev)
+ *  implement SandboxBackend; the daemon only ever talks to a sandbox through this interface. */
 import type { EgressPolicy, IsolationTier } from '../../../shared/types.js';
 
 export type SandboxSpec = {
@@ -28,7 +28,7 @@ export type ProbeResult = {
 };
 
 export interface SandboxBackend {
-  name: 'docker' | 'gvisor' | 'kata-fc' | 'firecracker';
+  name: 'docker' | 'firecracker';
   tier: IsolationTier; // the tier this backend delivers when available
   probe(): Promise<ProbeResult>;
   create(spec: SandboxSpec): Promise<SandboxHandle>;

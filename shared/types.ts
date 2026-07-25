@@ -1,7 +1,8 @@
 /** Wire types shared by the registry, the contributor daemon, the web app and the buyer agent. */
 
-/** How strongly a sandbox is isolated from the contributor's host. Ordered weakest → strongest. */
-export type IsolationTier = 'container' | 'usermode-kernel' | 'microvm';
+/** How strongly a sandbox is isolated from the contributor's host. Ordered weakest → strongest.
+ *  `container` is a local-dev tier only — the marketplace minimum is `microvm`. */
+export type IsolationTier = 'container' | 'microvm';
 
 /** Per-lease egress rules. Minimal in phase 0 (only `mode` is enforced); expanded in phase 6. */
 export type EgressPolicy = {
@@ -21,15 +22,14 @@ export type NodeInfo = {
   rateLamportsPerHour: string; // bigint over the wire
   busy: boolean;
   isolation: IsolationTier; // strongest tier this node actually delivers
-  isolationBackend: string; // docker | gvisor | kata-fc | firecracker
+  isolationBackend: string; // docker (dev) | firecracker
   egressMode: EgressPolicy['mode'];
 };
 
 /** Weakest → strongest, for comparing a node's tier against a lease's minimum. */
 export const TIER_RANK: Record<IsolationTier, number> = {
   container: 0,
-  'usermode-kernel': 1,
-  microvm: 2,
+  microvm: 1,
 };
 
 /** True when a node's tier is at least the requested minimum. Single source of the ordering. */
@@ -50,6 +50,32 @@ export type LeaseInfo = {
   billedLamports?: string;
   billedSeconds?: number;
   error?: string;
+};
+
+/** GET /wallet — balance plus the buyer dashboard roll-up. Live leases are included in the totals. */
+export type BuyerSummary = {
+  address: string;
+  balanceLamports: string;
+  payTo: string;
+  leaseCount: number;
+  activeLeases: number;
+  totalLeaseSeconds: number;
+  totalSpentLamports: string;
+  suspended: boolean;
+};
+
+/** GET /contributor/summary — earnings, keys, and this wallet's nodes as the registry sees them. */
+export type ContributorSummary = {
+  address: string;
+  balanceLamports: string;
+  earnedLamports: string;
+  unpaidLamports: string; // earned but not yet settled on-chain
+  leasesGiven: number;
+  activeLeases: number;
+  totalGivenSeconds: number;
+  maxKeys: number;
+  keys: { key: string; createdAt: string }[];
+  nodes: (NodeInfo & { online: boolean })[];
 };
 
 /** Registry -> contributor, handed out on the heartbeat response.

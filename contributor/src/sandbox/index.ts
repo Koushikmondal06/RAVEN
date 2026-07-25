@@ -1,8 +1,6 @@
 /** Picks the sandbox backend from SANDBOX_BACKEND and refuses to run if it can't deliver. */
 import { DockerBackend, type DockerConfig } from './docker.js';
 import { FirecrackerBackend } from './firecracker.js';
-import { GvisorBackend } from './gvisor.js';
-import { KataFirecrackerBackend } from './kata-fc.js';
 import type { SandboxBackend } from './types.js';
 
 export type { SandboxBackend, SandboxHandle, SandboxSpec, ProbeResult } from './types.js';
@@ -20,15 +18,13 @@ export async function selectBackend(name: string, docker: DockerConfig): Promise
 
 function build(name: string, docker: DockerConfig): SandboxBackend {
   switch (name) {
-    case 'docker':
-      return new DockerBackend(docker);
-    case 'gvisor':
-      return new GvisorBackend(docker);
-    case 'kata-fc':
-      return new KataFirecrackerBackend(docker);
     case 'firecracker':
       return new FirecrackerBackend(docker);
+    case 'docker':
+      // Local-dev tier only: a shared host kernel is below the marketplace minimum, so a node
+      // running this backend registers fine but no buyer can rent it.
+      return new DockerBackend(docker);
     default:
-      throw new Error(`unknown SANDBOX_BACKEND=${name} (known: docker, gvisor, kata-fc, firecracker)`);
+      throw new Error(`unknown SANDBOX_BACKEND=${name} (known: firecracker, docker)`);
   }
 }

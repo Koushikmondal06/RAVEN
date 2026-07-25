@@ -19,7 +19,8 @@ const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
 const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
-const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'docker';
+// firecracker is the default because it's the only tier the marketplace rents; 'docker' is local dev.
+const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'firecracker';
 // Default-deny-ish: only DNS + a buyer's allowlist leave the sandbox. Set 'open' to disable.
 const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'allowlist') as EgressPolicy['mode'];
 const REAP_INTERVAL_MS = Number(process.env.REAP_INTERVAL_MS ?? 60_000);
@@ -44,15 +45,17 @@ async function post(path: string, body: unknown) {
   return res.json() as Promise<any>;
 }
 
-await logCapabilities();
-
-// Fail loudly at startup if the configured backend can't deliver, rather than downgrading silently.
-const backend: SandboxBackend = await selectBackend(SANDBOX_BACKEND, {
+const sandboxCfg = {
   image: IMAGE,
   imageContext: new URL('../sandbox', import.meta.url).pathname,
   tunnelMode: TUNNEL_MODE,
   boreServer: BORE_SERVER,
-});
+};
+
+await logCapabilities(sandboxCfg);
+
+// Fail loudly at startup if the configured backend can't deliver, rather than downgrading silently.
+const backend: SandboxBackend = await selectBackend(SANDBOX_BACKEND, sandboxCfg);
 
 // leaseId -> live handle, so stop() and the reaper have what they need to tear a sandbox down.
 const handles = new Map<string, SandboxHandle>();

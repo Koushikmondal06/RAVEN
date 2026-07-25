@@ -19,15 +19,20 @@ import {
 } from './auth.js';
 import { billable, cost, secondsRemaining } from './billing.js';
 import {
+  MAX_CONTRIBUTOR_KEYS,
+  buyerTotals,
   charge,
+  contributorTotals,
+  createContributorKey,
   credit,
+  deleteContributorKey,
   getBalance,
   initSchema,
+  listContributorKeys,
   putNonce,
   recordPayout,
   setUserRole,
   takeNonce,
-  upsertContributorKey,
 } from './db.js';
 import { PLATFORM_PAYTO, confirmDeposit, payoutSol } from './solana.js';
 
@@ -174,21 +179,30 @@ app.post('/auth/verify', asyncRoute(async (req, res) => {
   if (!verifySignIn(address, nonce, signature)) return res.status(401).json({ error: 'bad signature' });
 
   await setUserRole(address, role);
-  const token = signSession(address, role);
-
-  if (role === 'contributor') {
-    // Payout address IS the verified wallet — earnings go back to the address that signed in.
-    const contributorKey = await upsertContributorKey(address, address, newContributorKey);
-    return res.json({ token, address, role, contributorKey });
-  }
-  res.json({ token, address, role });
+  // One session covers both dashboards: the same wallet is a buyer when it rents and a contributor
+  // when it hosts, so `role` only records which door they came in — it gates nothing.
+  res.json({ token: signSession(address, role), address, role });
 }));
 
-// ---------- wallet (buyer) ----------
+// ---------- wallet + buyer dashboard ----------
 
+/** Balance plus the buyer roll-up the dashboard shows. Live leases are counted from memory, so the
+ *  totals include time that has not been charged yet. */
 app.get('/wallet', requireSession, asyncRoute(async (req, res) => {
   const address = sessionAddress(req);
-  res.json({ address, balanceLamports: (await getBalance(address)).toString(), payTo: PLATFORM_PAYTO });
+  const totals = await buyerTotals(address);
+  const live = [...leases.values()].filter((l) => l.address === address && l.status !== 'ended');
+  const liveSeconds = live.reduce((t, l) => t + (l.startedAt ? (Date.now() - l.startedAt) / 1000 : 0), 0);
+  res.json({
+    address,
+    balanceLamports: (await getBalance(address)).toString(),
+    payTo: PLATFORM_PAYTO,
+    leaseCount: totals.leases + live.length,
+    activeLeases: live.length,
+    totalLeaseSeconds: Math.round(totals.seconds + liveSeconds),
+    totalSpentLamports: totals.lamports.toString(),
+    suspended: suspended.has(address),
+  });
 }));
 
 app.post('/wallet/topup', requireSession, asyncRoute(async (req, res) => {
@@ -200,9 +214,48 @@ app.post('/wallet/topup', requireSession, asyncRoute(async (req, res) => {
   res.json({ creditedLamports: amount.toString(), balanceLamports: balance.toString() });
 }));
 
+// ---------- contributor dashboard (wallet session, not the daemon's RAVEN_KEY) ----------
+
+/** Earnings roll-up, the wallet's keys, and its nodes as the registry currently sees them. */
+app.get('/contributor/summary', requireSession, asyncRoute(async (req, res) => {
+  const address = sessionAddress(req);
+  const totals = await contributorTotals(address);
+  const mine = [...nodes.values()].filter((n) => n.payout === address);
+  const liveSeconds = mine.reduce((t, n) => {
+    const lease = n.leaseId ? leases.get(n.leaseId) : undefined;
+    return t + (lease?.status === 'active' && lease.startedAt ? (Date.now() - lease.startedAt) / 1000 : 0);
+  }, 0);
+  res.json({
+    address,
+    balanceLamports: (await getBalance(address)).toString(),
+    earnedLamports: totals.lamports.toString(),
+    unpaidLamports: totals.unpaidLamports.toString(), // owed but not yet settled on-chain
+    leasesGiven: totals.leases + mine.filter((n) => n.leaseId).length,
+    activeLeases: mine.filter((n) => n.leaseId).length,
+    totalGivenSeconds: Math.round(totals.seconds + liveSeconds),
+    maxKeys: MAX_CONTRIBUTOR_KEYS,
+    keys: await listContributorKeys(address),
+    nodes: mine.map((n) => ({ ...toNodeInfo(n), online: online(n) })),
+  });
+}));
+
+/** Mints a key, up to MAX_CONTRIBUTOR_KEYS. The payout address is always the signed-in wallet. */
+app.post('/contributor/keys', requireSession, asyncRoute(async (req, res) => {
+  const created = await createContributorKey(sessionAddress(req), newContributorKey);
+  if (!created) return res.status(409).json({ error: `at most ${MAX_CONTRIBUTOR_KEYS} keys per wallet` });
+  res.json(created);
+}));
+
+/** Revoking a key kills the daemons using it — their next heartbeat 401s. Frees a key slot. */
+app.delete('/contributor/keys/:key', requireSession, asyncRoute(async (req, res) => {
+  const ok = await deleteContributorKey(sessionAddress(req), String(req.params.key));
+  if (!ok) return res.status(404).json({ error: 'no such key' });
+  res.json({ ok: true });
+}));
+
 // ---------- nodes (contributor daemon: authenticates with RAVEN_KEY, never a wallet) ----------
 
-const TIERS: IsolationTier[] = ['container', 'usermode-kernel', 'microvm'];
+const TIERS: IsolationTier[] = ['container', 'microvm'];
 
 app.post('/nodes/register', requireContributorKey, (req, res) => {
   const { label, cpus, memMb, rateLamportsPerHour, isolation, isolationBackend, egressMode } = req.body ?? {};
@@ -285,7 +338,12 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   if (node.leaseId) return res.status(409).json({ error: 'node is busy' });
 
   // Never place a lease on a node weaker than the buyer's minimum — and say which tiers exist.
+  // Reject an unknown tier outright: TIER_RANK[garbage] is undefined, so satisfiesTier would say
+  // "below minimum" for every node and the buyer would see a confusing 409 instead of a bad request.
   const minIsolation = req.body?.minIsolation as IsolationTier | undefined;
+  if (minIsolation && !TIERS.includes(minIsolation)) {
+    return res.status(400).json({ error: `unknown minIsolation ${minIsolation}`, tiers: TIERS });
+  }
   if (minIsolation && !satisfiesTier(node.isolation, minIsolation)) {
     const availableTiers = [
       ...new Set([...nodes.values()].filter((n) => online(n) && !n.leaseId).map((n) => n.isolation)),

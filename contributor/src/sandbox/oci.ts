@@ -1,6 +1,6 @@
-/** Shared OCI-container plumbing for the docker and gvisor backends: image build, bore tunnel,
- *  naming, teardown, listing. The only difference between the two backends is the extra `docker run`
- *  flags they pass (gvisor adds --runtime=runsc and a tighter sandbox), so that is all they override. */
+/** Container plumbing for the docker (local-dev) backend: image build, bore tunnel, naming, teardown,
+ *  listing. `boreTunnel` is shared with the firecracker backend — a microVM's SSH port needs the same
+ *  outbound tunnel to be reachable by a remote buyer. */
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import { promisify } from 'node:util';
@@ -40,13 +40,24 @@ export async function ensureImage(image: string, context: string) {
   built.add(image);
 }
 
-/** bore prints "listening at bore.pub:PORT" once the remote port is assigned. */
-export async function boreTunnel(cfg: OciConfig, leaseId: string, hostPort: number): Promise<{ host: string; port: number }> {
+/** bore prints "listening at bore.pub:PORT" once the remote port is assigned.
+ *
+ *  `target` says what to forward to. A container publishes port 22 on the host, so the default target
+ *  is the host itself via `host.docker.internal`. A microVM's port 22 lives on a host-local tap /30
+ *  instead, which the bore container can only route to when it shares the host's network namespace —
+ *  hence `hostNetwork`. */
+export async function boreTunnel(
+  cfg: OciConfig,
+  leaseId: string,
+  port: number,
+  target: { host?: string; hostNetwork?: boolean } = {},
+): Promise<{ host: string; port: number }> {
+  const localHost = target.host ?? 'host.docker.internal';
   await run('docker', [
     'run', '-d', '--name', tunnelBox(leaseId),
-    '--add-host=host.docker.internal:host-gateway',
-    'ekzhang/bore', 'local', String(hostPort),
-    '--local-host', 'host.docker.internal',
+    ...(target.hostNetwork ? ['--network', 'host'] : ['--add-host=host.docker.internal:host-gateway']),
+    'ekzhang/bore', 'local', String(port),
+    '--local-host', localHost,
     '--to', cfg.boreServer,
   ]);
   for (let i = 0; i < 30; i++) {
