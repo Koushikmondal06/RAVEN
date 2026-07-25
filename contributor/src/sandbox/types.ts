@@ -29,6 +29,7 @@ export type ProbeResult = {
 
 export interface SandboxBackend {
   name: 'docker' | 'gvisor' | 'kata-fc' | 'firecracker';
+  tier: IsolationTier; // the tier this backend delivers when available
   probe(): Promise<ProbeResult>;
   create(spec: SandboxSpec): Promise<SandboxHandle>;
   destroy(handle: SandboxHandle): Promise<void>; // idempotent

@@ -20,7 +20,21 @@ export type NodeInfo = {
   memMb: number;
   rateLamportsPerHour: string; // bigint over the wire
   busy: boolean;
+  isolation: IsolationTier; // strongest tier this node actually delivers
+  isolationBackend: string; // docker | gvisor | kata-fc | firecracker
+  egressMode: EgressPolicy['mode'];
 };
+
+/** Weakest → strongest, for comparing a node's tier against a lease's minimum. */
+export const TIER_RANK: Record<IsolationTier, number> = {
+  container: 0,
+  'usermode-kernel': 1,
+  microvm: 2,
+};
+
+/** True when a node's tier is at least the requested minimum. Single source of the ordering. */
+export const satisfiesTier = (nodeTier: IsolationTier, minTier: IsolationTier): boolean =>
+  TIER_RANK[nodeTier] >= TIER_RANK[minTier];
 
 export type LeaseStatus = 'starting' | 'active' | 'ended';
 

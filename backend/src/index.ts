@@ -3,7 +3,8 @@ import '../../shared/env.js';
 import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
-import type { LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
+import type { EgressPolicy, IsolationTier, LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
+import { satisfiesTier } from '../../shared/types.js';
 import {
   NONCE_TTL_MS,
   contributorPayout,
@@ -41,6 +42,9 @@ type Node = {
   cpus: number;
   memMb: number;
   rate: bigint;
+  isolation: IsolationTier;
+  isolationBackend: string;
+  egressMode: EgressPolicy['mode'];
   lastSeen: number;
   leaseId?: string;
 };
@@ -77,6 +81,9 @@ function toNodeInfo(n: Node): NodeInfo {
     memMb: n.memMb,
     rateLamportsPerHour: n.rate.toString(),
     busy: Boolean(n.leaseId),
+    isolation: n.isolation,
+    isolationBackend: n.isolationBackend,
+    egressMode: n.egressMode,
   };
 }
 
@@ -188,8 +195,10 @@ app.post('/wallet/topup', requireSession, asyncRoute(async (req, res) => {
 
 // ---------- nodes (contributor daemon: authenticates with RAVEN_KEY, never a wallet) ----------
 
+const TIERS: IsolationTier[] = ['container', 'usermode-kernel', 'microvm'];
+
 app.post('/nodes/register', requireContributorKey, (req, res) => {
-  const { label, cpus, memMb, rateLamportsPerHour } = req.body ?? {};
+  const { label, cpus, memMb, rateLamportsPerHour, isolation, isolationBackend, egressMode } = req.body ?? {};
   if (!rateLamportsPerHour) return res.status(400).json({ error: 'rate required' });
   const node: Node = {
     id: randomUUID(),
@@ -198,10 +207,16 @@ app.post('/nodes/register', requireContributorKey, (req, res) => {
     cpus: Number(cpus ?? 1),
     memMb: Number(memMb ?? 1024),
     rate: BigInt(rateLamportsPerHour),
+    // Default to the weakest tier when a pre-tier daemon registers, so old daemons keep working.
+    isolation: TIERS.includes(isolation) ? isolation : 'container',
+    isolationBackend: typeof isolationBackend === 'string' ? isolationBackend : 'docker',
+    egressMode: egressMode === 'deny-all' || egressMode === 'allowlist' ? egressMode : 'open',
     lastSeen: Date.now(),
   };
   nodes.set(node.id, node);
-  console.log(`node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB)`);
+  console.log(
+    `node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB, ${node.isolation} via ${node.isolationBackend})`,
+  );
   res.json({ nodeId: node.id });
 });
 
@@ -250,6 +265,15 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   const node = nodes.get(req.body?.nodeId);
   if (!node || !online(node)) return res.status(404).json({ error: 'node not available' });
   if (node.leaseId) return res.status(409).json({ error: 'node is busy' });
+
+  // Never place a lease on a node weaker than the buyer's minimum — and say which tiers exist.
+  const minIsolation = req.body?.minIsolation as IsolationTier | undefined;
+  if (minIsolation && !satisfiesTier(node.isolation, minIsolation)) {
+    const availableTiers = [
+      ...new Set([...nodes.values()].filter((n) => online(n) && !n.leaseId).map((n) => n.isolation)),
+    ];
+    return res.status(409).json({ error: `node isolation ${node.isolation} is below requested ${minIsolation}`, availableTiers });
+  }
 
   const address = sessionAddress(req);
   const balance = await getBalance(address);

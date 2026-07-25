@@ -2,6 +2,7 @@
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import { promisify } from 'node:util';
+import type { IsolationTier } from '../../../shared/types.js';
 import type { ProbeResult, SandboxBackend, SandboxHandle, SandboxSpec } from './types.js';
 
 const run = promisify(execFile);
@@ -23,6 +24,7 @@ const lanIp = () =>
 
 export class DockerBackend implements SandboxBackend {
   readonly name = 'docker' as const;
+  readonly tier: IsolationTier = 'container';
   private imageBuilt = false;
 
   constructor(private cfg: DockerConfig) {}

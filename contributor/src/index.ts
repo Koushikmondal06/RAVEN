@@ -1,8 +1,9 @@
 import '../../shared/env.js';
 
 import os from 'node:os';
-import type { NodeCommand } from '../../shared/types.js';
+import type { EgressPolicy, NodeCommand } from '../../shared/types.js';
 import { type SandboxBackend, type SandboxHandle, selectBackend } from './sandbox/index.js';
+import { logCapabilities } from './sandbox/probe.js';
 
 // The daemon needs exactly two things: which registry to call, and the bearer key that identifies it.
 // No wallet, no keypair, no payout address ever runs on this box — the backend resolves RAVEN_KEY to a
@@ -16,6 +17,7 @@ const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
 const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'docker';
+const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'open') as EgressPolicy['mode']; // enforced in phase 6
 const IMAGE = 'raven-sandbox';
 
 if (!RAVEN_KEY) {
@@ -35,6 +37,8 @@ async function post(path: string, body: unknown) {
   if (!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
   return res.json() as Promise<any>;
 }
+
+await logCapabilities();
 
 // Fail loudly at startup if the configured backend can't deliver, rather than downgrading silently.
 const backend: SandboxBackend = await selectBackend(SANDBOX_BACKEND, {
@@ -74,8 +78,14 @@ const { nodeId } = await post('/nodes/register', {
   cpus: CPUS,
   memMb: MEM_MB,
   rateLamportsPerHour: RATE,
+  isolation: backend.tier,
+  isolationBackend: backend.name,
+  egressMode: EGRESS_MODE,
 });
-console.log(`registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour`);
+console.log(
+  `registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour ` +
+    `(${backend.tier} via ${backend.name}, egress ${EGRESS_MODE})`,
+);
 
 setInterval(async () => {
   try {
