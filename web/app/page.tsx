@@ -114,9 +114,10 @@ const TIER_LABEL: Record<IsolationTier, string> = {
   microvm: 'microVM',
 };
 
-// microVM-only marketplace: every lease is placed on a hardware-virtualized (KVM) node. Weaker
-// tiers (container/gVisor) are shown but never rentable here.
-const MIN_ISOLATION: IsolationTier = 'microvm';
+// Enforced minimum isolation. gVisor ('usermode-kernel') gives a virtualized kernel with no KVM —
+// easy to run on any host (setup-gvisor.sh) — so a plain 'container' node is never rentable, but
+// gVisor and microVM are. Set to 'microvm' to require hardware virtualization.
+const MIN_ISOLATION: IsolationTier = 'usermode-kernel';
 
 function Explore() {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
@@ -159,7 +160,8 @@ function Explore() {
       <section>
         <h2>Explore</h2>
         <p className="sub" style={{ marginBottom: '0.75rem' }}>
-          Minimum isolation: <strong>microVM only</strong> — leases run in a hardware-virtualized guest.
+          Minimum isolation: <strong>{TIER_LABEL[MIN_ISOLATION]} or stronger</strong> — every lease runs
+          in a virtualized kernel, never a plain shared-kernel container.
         </p>
         <div style={{ marginBottom: '0.75rem' }}>
           <input

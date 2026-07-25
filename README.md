@@ -80,11 +80,22 @@ register rather than downgrading.
 | `usermode-kernel` | `gvisor` | syscalls intercepted in userspace (runsc) | `runsc` installed |
 | `microvm` | `kata-fc` / `firecracker` | separate guest kernel, KVM | `/dev/kvm`, nested virt |
 
+**Easiest real-isolation contributor — gVisor, no KVM:** one command sets it up, and it gives each
+lease a virtualized kernel (runsc) on any ordinary VM:
+
+```bash
+sudo bash contributor/scripts/setup-gvisor.sh     # installs runsc, registers the Docker runtime
+SANDBOX_BACKEND=gvisor npm run contributor         # (or set it in contributor/.env and use compose)
+```
+
+See [contributor/docs/gvisor-setup.md](contributor/docs/gvisor-setup.md). The web marketplace's
+minimum is `usermode-kernel`, so a gVisor node is rentable but a plain `container` node is not.
+
 The `microvm` tier needs `/dev/kvm` — **bare metal or a nested-virt-capable instance**. Standard
 DigitalOcean droplets do not expose it (the registry + MongoDB can still live on DO). Run
 `bash contributor/scripts/preflight-microvm.sh` on a host to check, and see
-[contributor/docs/microvm-setup.md](contributor/docs/microvm-setup.md). Only `container` and
-`gvisor` are runnable without KVM; the microVM backends are written but unverified in CI.
+[contributor/docs/microvm-setup.md](contributor/docs/microvm-setup.md). The microVM backends are
+written but unverified in CI.
 
 ## Run it
 

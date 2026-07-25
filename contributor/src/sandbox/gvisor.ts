@@ -19,11 +19,18 @@ export class GvisorBackend implements SandboxBackend {
   constructor(private cfg: OciConfig) {}
 
   async probe(): Promise<ProbeResult> {
+    // Ask the Docker daemon we actually use (host, via the socket) whether the runsc runtime is
+    // registered — works whether this daemon runs natively or in the socket-mounted container.
     try {
-      await run('sh', ['-c', 'command -v runsc']);
-      return { available: true, tier: this.tier };
-    } catch {
-      return { available: false, tier: this.tier, reason: 'runsc not on PATH' };
+      const { stdout } = await run('docker', ['info', '--format', '{{json .Runtimes}}']);
+      if (/runsc/.test(stdout)) return { available: true, tier: this.tier };
+      return {
+        available: false,
+        tier: this.tier,
+        reason: 'runsc runtime not registered in Docker (run contributor/scripts/setup-gvisor.sh on the host)',
+      };
+    } catch (e) {
+      return { available: false, tier: this.tier, reason: `docker not reachable: ${(e as Error).message}` };
     }
   }
 

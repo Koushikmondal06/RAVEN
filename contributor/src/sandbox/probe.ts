@@ -38,10 +38,20 @@ function virtFlag(): boolean {
   }
 }
 
+/** runsc is registered as a Docker runtime on the daemon we use (host, via the socket). */
+async function dockerHasRunsc(): Promise<boolean> {
+  try {
+    const { stdout } = await run('docker', ['info', '--format', '{{json .Runtimes}}']);
+    return /runsc/.test(stdout);
+  } catch {
+    return false;
+  }
+}
+
 export async function probeBackends(): Promise<BackendProbe[]> {
   const kvm = kvmUsable();
   const virt = virtFlag();
-  const [hasRunsc, hasKataShim] = await Promise.all([onPath('runsc'), onPath('containerd-shim-kata-fc-v2')]);
+  const [hasRunsc, hasKataShim] = await Promise.all([dockerHasRunsc(), onPath('containerd-shim-kata-fc-v2')]);
   const microvmReason = !virt
     ? 'no vmx/svm in /proc/cpuinfo (virtualization not exposed)'
     : !kvm.ok
@@ -56,7 +66,7 @@ export async function probeBackends(): Promise<BackendProbe[]> {
       backend: 'gvisor',
       tier: 'usermode-kernel',
       available: hasRunsc,
-      reason: hasRunsc ? undefined : 'runsc not on PATH',
+      reason: hasRunsc ? undefined : 'runsc runtime not in Docker (run scripts/setup-gvisor.sh)',
     },
     {
       backend: 'kata-fc',
