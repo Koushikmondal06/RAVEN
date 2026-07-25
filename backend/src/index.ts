@@ -49,10 +49,10 @@ const OFFLINE_AFTER_MS = 20_000;
 // always sends one, and a key wins over the password whenever it is present).
 const REQUIRE_SSH_KEY = process.env.REQUIRE_SSH_KEY === 'true';
 const MAX_LEASE_TTL_S = Number(process.env.MAX_LEASE_TTL_S ?? 86_400); // guest self-destruct cap
-// The tunnel relay every lease's SSH port is published through. Handed to each daemon at register
-// time (over its authenticated RAVEN_KEY call) rather than configured per contributor: the operator
-// controls where buyer traffic flows, and the secret never reaches the public web bundle.
-// Unset BORE_SERVER = fall back to the public bore.pub, which is fine for a demo and not for real use.
+// Optional: point every daemon at a private tunnel relay instead of the public bore.pub. Handed out
+// at register time (over the authenticated RAVEN_KEY call) so the secret never reaches the web
+// bundle. Leave both unset — the default — and leases tunnel through public bore.pub, which needs no
+// infrastructure at all. See the note in the README about what that means for buyer traffic.
 const BORE_SERVER = process.env.BORE_SERVER ?? '';
 const BORE_SECRET = process.env.BORE_SECRET ?? '';
 
@@ -376,7 +376,10 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   leases.set(lease.id, lease);
   node.leaseId = lease.id;
   // Guest hard-TTL backstop: self-destruct at the current balance runway even if the registry dies.
-  const ttlSeconds = Math.min(MAX_LEASE_TTL_S, Math.max(60, Math.floor(secondsRemaining(node.rate, balance))));
+  // Floor of 5 minutes, not 1: this is only a backstop for a dead registry (the watchdog ends leases
+  // on exhausted balance every METER_INTERVAL_MS), and a 60s floor made a thin-balance lease
+  // self-destruct while the buyer was still typing their first command.
+  const ttlSeconds = Math.min(MAX_LEASE_TTL_S, Math.max(300, Math.floor(secondsRemaining(node.rate, balance))));
   push(node.id, {
     type: 'start',
     leaseId: lease.id,

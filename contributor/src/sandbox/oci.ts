@@ -1,14 +1,20 @@
 /** The sandbox, end to end: image build, container run, bore tunnel, naming, teardown, listing.
  *  Every lease is a hardened, mount-less Docker container reachable over an outbound bore tunnel. */
 import { execFile } from 'node:child_process';
+import net from 'node:net';
 import os from 'node:os';
 import { promisify } from 'node:util';
 import type { SandboxHandle, SandboxSpec } from './types.js';
 
 export const run = promisify(execFile);
 
-export const box = (leaseId: string) => `raven-${leaseId.slice(0, 8)}`;
-export const tunnelBox = (leaseId: string) => `raven-bore-${leaseId.slice(0, 8)}`;
+// Names are short for humans reading `docker ps`; they are NOT how the reaper identifies a sandbox.
+// The container name only carries the first 8 chars of the lease id, so reconstructing an id from a
+// name yields something that never matches the full UUID the daemon holds — which made the reaper
+// destroy every live lease one tick after it started. The full id lives in this label instead.
+export const LEASE_LABEL = 'raven.lease';
+export const box = (leaseId: string) => `raven-sb-${leaseId.slice(0, 8)}`;
+export const tunnelBox = (leaseId: string) => `raven-tun-${leaseId.slice(0, 8)}`;
 
 export const lanIp = () =>
   Object.values(os.networkInterfaces())
@@ -40,22 +46,44 @@ export async function ensureImage(image: string, context: string) {
   built.add(image);
 }
 
-/** bore prints "listening at bore.pub:PORT" once the remote port is assigned. The sandbox publishes
- *  port 22 on the host, so the tunnel forwards to the host itself via `host.docker.internal`. */
-export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number): Promise<{ host: string; port: number }> {
+/**
+ * bore prints "listening at bore.pub:PORT" once the remote port is assigned.
+ *
+ * The tunnel container joins the SANDBOX's network namespace (`--network container:…`), so sshd is
+ * simply 127.0.0.1:22 to it. The previous shape — publish port 22 on the host, then forward to
+ * `host.docker.internal` — needs traffic from the Docker bridge back into a host port, which Ubuntu's
+ * default ufw rules silently drop. The buyer then sees the tunnel connect and every SSH attempt reset.
+ * Sharing the namespace removes that hop, and with it the host port: nothing about the sandbox is
+ * exposed on the contributor's machine at all.
+ */
+export async function boreTunnel(cfg: OciConfig, leaseId: string): Promise<{ host: string; port: number }> {
   await run('docker', [
     'run', '-d', '--name', tunnelBox(leaseId),
-    '--add-host=host.docker.internal:host-gateway',
+    '--label', `${LEASE_LABEL}=${leaseId}`,
+    '--label', 'raven.role=tunnel',
+    '--network', `container:${box(leaseId)}`,
     // -e, not --secret: an argv secret is visible to every user on the host via `docker inspect`/ps.
     ...(cfg.boreSecret ? ['-e', `BORE_SECRET=${cfg.boreSecret}`] : []),
-    'ekzhang/bore', 'local', String(port),
-    '--local-host', 'host.docker.internal',
+    'ekzhang/bore', 'local', '22',
+    '--local-host', '127.0.0.1',
     '--to', cfg.boreServer,
   ]);
   for (let i = 0; i < 30; i++) {
     const { stdout, stderr } = await run('docker', ['logs', tunnelBox(leaseId)]);
     const match = `${stdout}${stderr}`.match(/listening at \S+?:(\d+)/);
-    if (match) return { host: cfg.boreServer, port: Number(match[1]) };
+    if (match) {
+      const port = Number(match[1]);
+      // "listening" only means the relay assigned a port — not that traffic survives the round trip.
+      // Prove it end to end before the lease is advertised, or a relay that drops the tunnel hands the
+      // buyer an address that closes every connection while everything here still looks healthy.
+      if (!(await reachesSshd(cfg.boreServer, port))) {
+        throw new Error(
+          `tunnel to ${cfg.boreServer}:${port} opened but does not reach sshd — the relay accepted the ` +
+            `port and dropped the traffic. ${cfg.boreServer === 'bore.pub' ? 'This is public bore.pub; run your own relay (docker compose up relay) and set BORE_SERVER on the registry.' : 'Check that the relay host allows its port range inbound.'}`,
+        );
+      }
+      return { host: cfg.boreServer, port };
+    }
     // A wrong/missing secret makes bore exit immediately — say so instead of timing out silently.
     if (/(unauthorized|invalid secret|incorrect secret)/i.test(`${stdout}${stderr}`)) {
       throw new Error(`bore rejected the tunnel to ${cfg.boreServer} — check BORE_SECRET on the registry`);
@@ -65,17 +93,75 @@ export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number):
   throw new Error(`bore never reported a remote port (relay ${cfg.boreServer})`);
 }
 
-/** Runs the sandbox container, wires the tunnel, returns a handle.
+/** Dials the public address a buyer would use and waits for sshd's banner. Retries: the relay needs a
+ *  moment to wire a freshly assigned port. */
+async function reachesSshd(host: string, port: number, attempts = 6): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    const banner = await new Promise<boolean>((resolve) => {
+      const sock = net.connect({ host, port });
+      const done = (ok: boolean) => {
+        sock.destroy();
+        resolve(ok);
+      };
+      sock.setTimeout(5000, () => done(false));
+      sock.on('error', () => done(false));
+      sock.on('data', (b) => done(b.toString('utf8', 0, 8).startsWith('SSH-2.0')));
+    });
+    if (banner) return true;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return false;
+}
+
+/**
+ * Blocks until sshd is actually accepting connections, or explains why it never will.
  *
- *  Hardened as far as a shared-kernel container goes: no host filesystem, no new privileges, all
- *  capabilities dropped, read-only root with noexec/nosuid scratch, capped CPU/RAM/PIDs. The guest
- *  still shares this host's kernel — a kernel escape lands on the contributor's machine. */
+ * Without this the daemon posts `ready` the moment bore reports a port, so a buyer can connect
+ * before `ssh-keygen -A` has finished — or to a container that already died — and both look
+ * identical from their side: "Connection closed by <relay ip>". Reading the container's own log is
+ * the one signal that works from inside the daemon container, where the published port is not
+ * reachable on 127.0.0.1.
+ */
+async function waitForSshd(name: string, timeoutMs = 30_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { stdout: state } = await run('docker', ['inspect', '-f', '{{.State.Running}}', name]).catch(() => ({
+      stdout: 'false',
+    }));
+    const { stdout, stderr } = await run('docker', ['logs', '--tail', '40', name]).catch(() => ({ stdout: '', stderr: '' }));
+    const log = `${stdout}${stderr}`;
+    if (/Server listening on .* port 22/.test(log)) return;
+    if (state.trim() !== 'true') {
+      // Exited during boot. Its own last words are far more useful than a timeout would be.
+      throw new Error(`sandbox exited before sshd started: ${log.trim().split('\n').slice(-3).join(' | ') || 'no output'}`);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`sandbox sshd did not come up within ${timeoutMs / 1000}s`);
+}
+
+/** The host port Docker mapped to the sandbox's 22 — only meaningful in TUNNEL_MODE=local. */
+async function publishedPort(name: string): Promise<number> {
+  const { stdout } = await run('docker', ['port', name, '22']);
+  return Number(stdout.trim().split('\n')[0].split(':').pop());
+}
+
+/** Runs the sandbox container, waits for sshd, wires the tunnel, returns a handle.
+ *
+ *  Hardened as far as this image allows: no host filesystem, no new privileges, capped CPU/RAM/PIDs.
+ *  The guest shares this host's kernel — a kernel escape lands on the contributor's machine. */
 export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<SandboxHandle> {
   await ensureImage(cfg.image, cfg.imageContext);
   const name = box(spec.leaseId);
   await run('docker', [
     'run', '-d', '--name', name,
-    '-p', '0:22',
+    '--label', `${LEASE_LABEL}=${spec.leaseId}`,
+    '--label', 'raven.role=sandbox',
+    // Deliberately NO restart policy: a restart would resurrect the container after start.sh's TTL
+    // self-destruct, breaking the guarantee that a sandbox never outlives its lease.
+    // Port 22 is published on the host ONLY for TUNNEL_MODE=local; in bore mode the tunnel shares
+    // this container's network namespace instead, so nothing is exposed on the host.
+    ...(cfg.tunnelMode === 'local' ? ['-p', '0:22'] : []),
     '--cpus', String(spec.cpuCores),
     '--memory', `${spec.memMib}m`,
     '--pids-limit', '512',
@@ -89,9 +175,12 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
     ...sandboxEnv(spec),
     cfg.image,
   ]);
-  const { stdout } = await run('docker', ['port', name, '22']);
-  const hostPort = Number(stdout.trim().split('\n')[0].split(':').pop());
-  const where = cfg.tunnelMode === 'bore' ? await boreTunnel(cfg, spec.leaseId, hostPort) : { host: lanIp(), port: hostPort };
+  // Gate on readiness BEFORE opening the tunnel: no point publishing a port nothing answers on.
+  await waitForSshd(name);
+  const where =
+    cfg.tunnelMode === 'bore'
+      ? await boreTunnel(cfg, spec.leaseId)
+      : { host: lanIp(), port: await publishedPort(name) };
   return {
     leaseId: spec.leaseId,
     sshHost: where.host,
@@ -101,19 +190,41 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
 }
 
 export async function destroyContainer(leaseId: string): Promise<void> {
-  for (const name of [box(leaseId), tunnelBox(leaseId)]) {
+  // Tunnel FIRST, and not in parallel: it shares the sandbox's network namespace, and Docker refuses
+  // to remove a container while another is attached to its netns. Reversed, the sandbox removal fails
+  // — silently, since these are best-effort — and the buyer keeps a free machine forever.
+  for (const name of [tunnelBox(leaseId), box(leaseId)]) {
     await run('docker', ['rm', '-f', name]).catch(() => {});
   }
 }
 
+/**
+ * Every live sandbox, keyed by its FULL lease id.
+ *
+ * Filtered by label, never by name. A `name=raven-` filter also matches this daemon's own compose
+ * container (`raven-contributor-1`) and its siblings (`raven-backend-1`, `raven-web-1`) — the reaper
+ * would happily tear down the whole stack it is running inside.
+ */
 export async function listContainers(): Promise<SandboxHandle[]> {
-  const { stdout } = await run('docker', ['ps', '--filter', 'name=raven-', '--format', '{{.Names}}']);
-  return stdout
+  const { stdout } = await run('docker', [
+    'ps',
+    '--filter',
+    'label=raven.role=sandbox',
+    '--format',
+    `{{.Names}}\t{{.Label "${LEASE_LABEL}"}}`,
+  ]);
+  return parseSandboxRows(stdout);
+}
+
+/** Pure half of listContainers, so the id it reports can be tested without a Docker daemon. */
+export function parseSandboxRows(psOutput: string): SandboxHandle[] {
+  return psOutput
     .split('\n')
-    .map((n) => n.trim())
-    .filter((n) => n.startsWith('raven-') && !n.startsWith('raven-bore-'))
-    .map((name) => ({
-      leaseId: name.replace(/^raven-/, ''),
+    .map((line) => line.trim().split('\t'))
+    // No label = not ours (an unlabelled container, or one from an older daemon). Never reap it.
+    .filter(([name, leaseId]) => name && leaseId)
+    .map(([name, leaseId]) => ({
+      leaseId,
       sshHost: '',
       sshPort: 0,
       internal: { container: name },

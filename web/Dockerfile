@@ -7,10 +7,12 @@ FROM node:22-slim AS build
 # and every request dies as "Failed to fetch". Override only for a registry on its own https host:
 #   docker compose build --build-arg NEXT_PUBLIC_REGISTRY_URL=https://api.example.com web
 ARG NEXT_PUBLIC_REGISTRY_URL=/api
+ARG NEXT_PUBLIC_BORE_SERVER=
 ARG NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
 ARG NEXT_PUBLIC_SOLANA_CLUSTER=devnet
 ARG MAINNET=false
 ENV NEXT_PUBLIC_REGISTRY_URL=$NEXT_PUBLIC_REGISTRY_URL \
+    NEXT_PUBLIC_BORE_SERVER=$NEXT_PUBLIC_BORE_SERVER \
     NEXT_PUBLIC_SOLANA_RPC_URL=$NEXT_PUBLIC_SOLANA_RPC_URL \
     NEXT_PUBLIC_SOLANA_CLUSTER=$NEXT_PUBLIC_SOLANA_CLUSTER \
     MAINNET=$MAINNET \

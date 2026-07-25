@@ -3,6 +3,7 @@
  *  (container + bore tunnel) — a leak here is a leak there. Run: tsx reaper.test.ts */
 import { strictEqual, deepStrictEqual } from 'node:assert/strict';
 import type { SandboxHandle, SandboxSpec } from './types.js';
+import { parseSandboxRows } from './oci.js';
 import { reap } from './reaper.js';
 
 class FakeSandbox {
@@ -56,3 +57,24 @@ deepStrictEqual(reaped.sort(), ['orphan-a', 'orphan-b'], 'reaper must destroy on
 deepStrictEqual([...b.live.keys()], ['keep'], 'known lease must survive the reap');
 
 console.log('reaper ok');
+
+// Regression: the reaper once identified a sandbox by its container NAME, which carries only the
+// first 8 chars of the lease id. The reconstructed id never matched the full UUID the daemon holds,
+// so every live lease was destroyed one tick after it started — and the `raven-` name filter also
+// matched the daemon's own compose container. Identity now comes from a label instead.
+const LEASE = '2509060c-e5e2-4f3e-8b8b-144a474ee57f';
+const rows = parseSandboxRows(
+  [
+    `raven-sb-2509060c\t${LEASE}`,
+    'raven-contributor-1\t', // the daemon's own container: no label, must be ignored
+    '',
+  ].join('\n'),
+);
+deepStrictEqual(rows.map((r) => r.leaseId), [LEASE], 'must report the FULL lease id and skip unlabelled containers');
+
+const live = new FakeSandbox();
+await live.create(spec(LEASE));
+deepStrictEqual(await reap(live, new Set([LEASE])), [], 'a running lease must never be reaped');
+strictEqual(live.live.size, 1, 'the live sandbox must survive');
+
+console.log('reaper identity ok');
