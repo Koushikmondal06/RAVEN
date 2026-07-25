@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import type { NextConfig } from 'next';
 
@@ -13,6 +14,10 @@ if (process.env.MAINNET && !process.env.NEXT_PUBLIC_MAINNET) {
 // emits a plain static bundle to out/, served by nginx exactly like the old Vite build.
 const config: NextConfig = {
   output: 'export',
+  // Pin Turbopack's root to the parent dir so it resolves ../../shared/* imports. Locally the root
+  // is inferred from the repo-root lockfile; in the Docker image there is no root marker at /app, so
+  // without this Turbopack scopes to web/ and can't reach the sibling shared/ folder.
+  turbopack: { root: path.join(import.meta.dirname, '..') },
 };
 
 export default config;
