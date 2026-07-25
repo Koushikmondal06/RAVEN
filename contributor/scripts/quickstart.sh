@@ -22,7 +22,19 @@ case "$KEY" in rvn_ctb_*) ;; *) die "that does not look like a RAVEN_KEY (expect
 [ "$(uname -s)" = "Linux" ] || die "a rentable node needs Linux — gVisor cannot run on $(uname -s)."
 command -v docker >/dev/null || die "docker is not installed (https://docs.docker.com/engine/install/)"
 docker info >/dev/null 2>&1 || die "the docker daemon is not reachable — start it and re-run"
-command -v node >/dev/null || die "node 22+ is not installed (https://nodejs.org)"
+
+# sudo replaces PATH with secure_path, so a node installed per-user (nvm, fnm, asdf, homebrew) is
+# invisible to root even though `node -v` works for the invoking user. Borrow their PATH before
+# concluding node is missing — otherwise this rejects hosts that are perfectly fine.
+if ! command -v node >/dev/null 2>&1 && [ -n "${SUDO_USER:-}" ]; then
+  USER_NODE="$(su - "$SUDO_USER" -c 'command -v node' 2>/dev/null || true)"
+  [ -n "$USER_NODE" ] && export PATH="$(dirname "$USER_NODE"):$PATH"
+fi
+command -v node >/dev/null 2>&1 || die "node 22+ not found on root's PATH.
+       Installed via nvm/fnm? Point this run at it explicitly:
+         sudo env \"PATH=\$PATH\" bash $0 $KEY $REGISTRY"
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+[ "$NODE_MAJOR" -ge 22 ] || die "node $NODE_MAJOR is too old — the daemon needs 22+ (found $(node -v))"
 
 echo "→ 1/4 gVisor"
 bash "$HERE/setup-gvisor.sh"
@@ -41,6 +53,11 @@ fi
 
 echo "→ 3/4 dependencies"
 ( cd "$ROOT" && npm install --silent )
+# npm ran as root inside someone's checkout; hand the artefacts back so a later plain `npm install`
+# doesn't hit EACCES on root-owned files.
+if [ -n "${SUDO_USER:-}" ]; then
+  chown -R "$SUDO_USER" "$ROOT/node_modules" "$ENV_FILE" 2>/dev/null || true
+fi
 
 echo "→ 4/4 starting the daemon — your node appears in the marketplace within ~10s"
 echo "  (Ctrl-C stops it; re-run this script any time)"
