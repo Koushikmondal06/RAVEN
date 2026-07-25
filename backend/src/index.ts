@@ -3,8 +3,8 @@ import '../../shared/env.js';
 import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
-import type { EgressPolicy, IsolationTier, LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
-import { TIER_RANK, isSshPublicKey, satisfiesTier } from '../../shared/types.js';
+import type { LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
+import { isSshPublicKey } from '../../shared/types.js';
 import {
   NONCE_TTL_MS,
   contributorPayout,
@@ -42,7 +42,6 @@ const OFFLINE_AFTER_MS = 20_000;
 // Off by default: SSH is key-only. The wallet-address password is guessable from any explorer.
 const ALLOW_PASSWORD_SSH = process.env.ALLOW_PASSWORD_SSH === 'true';
 const MAX_LEASE_TTL_S = Number(process.env.MAX_LEASE_TTL_S ?? 86_400); // guest self-destruct cap
-const EGRESS_DROP_LIMIT = Number(process.env.EGRESS_DROP_LIMIT ?? 100_000); // per-lease dropped packets before suspend
 
 type Node = {
   id: string;
@@ -51,9 +50,6 @@ type Node = {
   cpus: number;
   memMb: number;
   rate: bigint;
-  isolation: IsolationTier;
-  isolationBackend: string;
-  egressMode: EgressPolicy['mode'];
   lastSeen: number;
   leaseId?: string;
 };
@@ -92,9 +88,6 @@ function toNodeInfo(n: Node): NodeInfo {
     memMb: n.memMb,
     rateLamportsPerHour: n.rate.toString(),
     busy: Boolean(n.leaseId),
-    isolation: n.isolation,
-    isolationBackend: n.isolationBackend,
-    egressMode: n.egressMode,
   };
 }
 
@@ -264,16 +257,8 @@ app.delete('/contributor/keys/:key', requireSession, asyncRoute(async (req, res)
 
 // ---------- nodes (contributor daemon: authenticates with RAVEN_KEY, never a wallet) ----------
 
-const TIERS: IsolationTier[] = ['container', 'usermode-kernel', 'microvm'];
-
-// The floor for every lease, enforced server-side. gVisor needs no KVM, so any ordinary Linux VM can
-// clear it; 'container' (shared host kernel) never can. Raise to 'microvm' to require real VMs.
-// A typo in the env var must not silently drop the floor, so an unknown value falls back.
-const envFloor = process.env.MARKET_MIN_ISOLATION as IsolationTier | undefined;
-const MARKET_MIN_ISOLATION: IsolationTier = envFloor && TIERS.includes(envFloor) ? envFloor : 'usermode-kernel';
-
 app.post('/nodes/register', requireContributorKey, (req, res) => {
-  const { label, cpus, memMb, rateLamportsPerHour, isolation, isolationBackend, egressMode } = req.body ?? {};
+  const { label, cpus, memMb, rateLamportsPerHour } = req.body ?? {};
   if (!rateLamportsPerHour) return res.status(400).json({ error: 'rate required' });
   const node: Node = {
     id: randomUUID(),
@@ -282,16 +267,10 @@ app.post('/nodes/register', requireContributorKey, (req, res) => {
     cpus: Number(cpus ?? 1),
     memMb: Number(memMb ?? 1024),
     rate: BigInt(rateLamportsPerHour),
-    // Default to the weakest tier when a pre-tier daemon registers, so old daemons keep working.
-    isolation: TIERS.includes(isolation) ? isolation : 'container',
-    isolationBackend: typeof isolationBackend === 'string' ? isolationBackend : 'docker',
-    egressMode: egressMode === 'deny-all' || egressMode === 'allowlist' ? egressMode : 'open',
     lastSeen: Date.now(),
   };
   nodes.set(node.id, node);
-  console.log(
-    `node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB, ${node.isolation} via ${node.isolationBackend})`,
-  );
+  console.log(`node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB)`);
   res.json({ nodeId: node.id });
 });
 
@@ -305,17 +284,6 @@ app.post('/nodes/:id/heartbeat', requireContributorKey, (req, res) => {
   const node = ownedNode(req);
   if (!node) return res.status(404).json({ error: 'unknown node' });
   node.lastSeen = Date.now();
-  // The daemon reports per-lease egress drop counters; a lease slamming the firewall gets suspended
-  // (its buyer address blocked from new rentals) and torn down.
-  const dropCounters = (req.body?.dropCounters ?? {}) as Record<string, number>;
-  for (const [leaseId, drops] of Object.entries(dropCounters)) {
-    const lease = leases.get(leaseId);
-    if (lease && lease.status === 'active' && drops > EGRESS_DROP_LIMIT) {
-      console.warn(`lease ${leaseId} dropped ${drops} egress packets — suspending buyer ${lease.address}`);
-      suspended.add(lease.address);
-      void endLease(lease, 'egress abuse');
-    }
-  }
   const commands = queued.get(node.id) ?? [];
   queued.delete(node.id);
   res.json({ commands });
@@ -352,24 +320,6 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   if (!node || !online(node)) return res.status(404).json({ error: 'node not available' });
   if (node.leaseId) return res.status(409).json({ error: 'node is busy' });
 
-  // Never place a lease on a node weaker than the buyer's minimum — and say which tiers exist.
-  // Reject an unknown tier outright: TIER_RANK[garbage] is undefined, so satisfiesTier would say
-  // "below minimum" for every node and the buyer would see a confusing 409 instead of a bad request.
-  const requested = req.body?.minIsolation as IsolationTier | undefined;
-  if (requested && !TIERS.includes(requested)) {
-    return res.status(400).json({ error: `unknown minIsolation ${requested}`, tiers: TIERS });
-  }
-  // A buyer may raise the floor but never lower it: MARKET_MIN_ISOLATION applies even when the
-  // request omits minIsolation, so a shared-kernel 'container' node is unrentable through the API
-  // and not merely hidden by the web UI's own gate.
-  const minIsolation = requested && TIER_RANK[requested] > TIER_RANK[MARKET_MIN_ISOLATION] ? requested : MARKET_MIN_ISOLATION;
-  if (!satisfiesTier(node.isolation, minIsolation)) {
-    const availableTiers = [
-      ...new Set([...nodes.values()].filter((n) => online(n) && !n.leaseId).map((n) => n.isolation)),
-    ];
-    return res.status(409).json({ error: `node isolation ${node.isolation} is below requested ${minIsolation}`, availableTiers });
-  }
-
   // SSH is key-only unless ALLOW_PASSWORD_SSH; a bad or missing key is rejected up front.
   const sshPublicKey = req.body?.sshPublicKey;
   if (sshPublicKey !== undefined && !isSshPublicKey(sshPublicKey)) {
@@ -380,7 +330,7 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   }
 
   const address = sessionAddress(req);
-  if (suspended.has(address)) return res.status(403).json({ error: 'account suspended for egress abuse' });
+  if (suspended.has(address)) return res.status(403).json({ error: 'account suspended' });
   const balance = await getBalance(address);
   if (balance < cost(node.rate, 60)) return res.status(402).json({ error: 'top up first: under one minute of balance' });
 
@@ -398,20 +348,12 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   node.leaseId = lease.id;
   // Guest hard-TTL backstop: self-destruct at the current balance runway even if the registry dies.
   const ttlSeconds = Math.min(MAX_LEASE_TTL_S, Math.max(60, Math.floor(secondsRemaining(node.rate, balance))));
-  // The node's advertised mode is the floor; a buyer may narrow it (allowlist CIDRs/ports) but the
-  // daemon still applies its own EGRESS_MODE, so this can only be as open as the node permits.
-  const egress: EgressPolicy = {
-    mode: node.egressMode,
-    allowCidrs: Array.isArray(req.body?.allowCidrs) ? req.body.allowCidrs.map(String) : undefined,
-    allowPorts: Array.isArray(req.body?.allowPorts) ? req.body.allowPorts.map(Number) : undefined,
-  };
   push(node.id, {
     type: 'start',
     leaseId: lease.id,
     sshPublicKey: lease.sshPublicKey,
     password: lease.password,
     ttlSeconds,
-    egress,
   });
   res.json(await toLeaseInfo(lease));
 }));

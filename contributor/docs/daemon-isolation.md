@@ -1,46 +1,48 @@
-# Where the contributor daemon runs (and why you don't containerize it)
+# Where the contributor daemon runs (and what that costs you)
 
 Two different boundaries get confused easily, so state them separately:
 
-- **What contains the buyer:** the Firecracker microVM — its own guest kernel under KVM, launched
-  through `jailer` (chroot, uid/gid 30000, cgroup v2 slice), with no host filesystem passed in. This is
-  the boundary the product sells, and it does not depend on how the daemon is packaged.
-- **What contains the daemon:** the host, and not much else. The daemon runs as **root** — it creates a
-  tap device per lease (`CAP_NET_ADMIN`) and loop-mounts each lease's rootfs (`CAP_SYS_ADMIN`) — so a
-  bug in the daemon or a malicious dependency owns the machine. Moving it into a container hides that,
-  it doesn't fix it.
+- **What contains the buyer:** one Docker container per lease — no host filesystem mounted,
+  `--cap-drop=ALL`, `--read-only` root with `noexec,nosuid` scratch tmpfs, `no-new-privileges`, capped
+  CPU/RAM/PIDs, key-only SSH, hard self-destruct TTL. It **shares your kernel**. Container escapes via
+  kernel bugs are a real, recurring class; this boundary is the ceiling of what a shared-kernel
+  sandbox can offer.
+- **What contains the daemon:** the host, and not much else. Whether it runs natively or as the
+  `contributor` Compose service, it needs the Docker API to start each lease — and **Docker socket
+  access is host root**: the API is not namespaced, so anything that can talk to it can start a
+  container that bind-mounts `/` and writes to it as root. Packaging the daemon in a container hides
+  that, it doesn't fix it.
 
-## Run it natively, under systemd
+The practical consequence is the same either way: **treat a contributor box as dedicated and
+disposable.** Don't co-locate the daemon with anything whose compromise would matter to you, and don't
+run it on a laptop that holds your keys.
 
-Ship: [`systemd/raven-contributor.service`](../systemd/raven-contributor.service). It keeps
-`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `RestrictSUIDSGID` and a `ReadWritePaths`
-allowlist (`/opt/raven`, `/var/lib/raven`, `/srv/jailer`) around a root process that needs KVM and the
-network stack. `NoNewPrivileges` is safe here because `jailer` only ever *drops* privileges. Setup steps
-are in that file's header.
+## The two ways to run it
 
-Treat a contributor box as **dedicated to this job** — don't co-locate the daemon with anything whose
-compromise would matter to you.
+**Compose (what the dashboard tells contributors to use):**
 
-## Why there is no `docker compose up contributor`
+```bash
+docker compose up -d --build contributor
+```
 
-The old demo ran the daemon in a container with `-v /var/run/docker.sock:/var/run/docker.sock`. **That
-mount gives the container host root**: the Docker API is not namespaced, so anything that can talk to
-the socket can start a container that bind-mounts `/` and writes to it as root.
+Mounts `/var/run/docker.sock` so each lease starts as a *sibling* container on the host daemon rather
+than nested inside this one. `restart: unless-stopped` survives reboots.
 
-For Firecracker it would be worse — the container would additionally need `--privileged`, `/dev/kvm`,
-`CAP_NET_ADMIN`, and host mounts for `/var/lib/raven` and `/srv/jailer`. At that point it's a root shell
-on the host wearing a costume, and it buys nothing over running natively. So the `contributor` service
-was removed from `docker-compose.yml` rather than made to work.
+**Natively, under systemd** — [`systemd/raven-contributor.service`](../systemd/raven-contributor.service).
+It keeps `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome` and `RestrictSUIDSGID` around the
+process. No socket mount is needed since it's already talking to the local daemon, and the unit can run
+as a user in the `docker` group rather than root — marginally better, and worth it for a long-lived
+node. Setup steps are in that file's header.
 
-`contributor/Dockerfile` still exists for the local-dev `container` tier (`SANDBOX_BACKEND=docker`),
-which cannot be rented.
+## If you want a real boundary
 
-## If you genuinely cannot run it on the host
+A shared kernel is the honest limit of this design. Stronger options exist and were prototyped here
+before being removed for setup cost:
 
-Run a small helper on the host that listens on a unix socket and accepts only three verbs — `create`,
-`destroy`, `list` — each with a fixed argument schema (lease id, cpu, mem, image, ssh key), and keep the
-daemon in an unprivileged container that can only ask for those three shapes. The helper validates
-every field and never passes buyer-controlled strings to a shell.
+- **gVisor (`runsc`)** — a userspace kernel; every guest syscall is served by the sentry instead of
+  your kernel. Installs with one script, needs no KVM, and works as a Docker runtime (`--runtime=runsc`).
+- **Firecracker microVMs** — each lease gets its own guest kernel under KVM, launched via `jailer`.
+  Strongest of the three, but needs `/dev/kvm`, root, and per-lease tap networking.
 
-That is more moving parts than the systemd unit and is only worth it when the daemon truly cannot run
-on the host. Native is the default recommendation.
+Both live in this repo's git history if the marketplace ever wants to advertise a real isolation
+boundary again.

@@ -2,10 +2,8 @@ import '../../shared/env.js';
 
 import http from 'node:http';
 import os from 'node:os';
-import type { EgressPolicy, NodeCommand } from '../../shared/types.js';
-import { applyEgress, readDropCounter, removeEgress } from './net/nft.js';
-import { type SandboxBackend, type SandboxHandle, selectBackend } from './sandbox/index.js';
-import { logCapabilities } from './sandbox/probe.js';
+import type { NodeCommand } from '../../shared/types.js';
+import { type SandboxHandle, destroyContainer, listContainers, runContainer } from './sandbox/index.js';
 import { reap } from './sandbox/reaper.js';
 
 // The daemon needs exactly two things: which registry to call, and the bearer key that identifies it.
@@ -19,11 +17,6 @@ const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
 const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
-// gvisor is the default: it clears the marketplace minimum and needs no KVM, so an ordinary Linux VM
-// works. firecracker (microvm) is stronger but needs /dev/kvm; 'docker' is local dev, unrentable.
-const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'gvisor';
-// Default-deny-ish: only DNS + a buyer's allowlist leave the sandbox. Set 'open' to disable.
-const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'allowlist') as EgressPolicy['mode'];
 const REAP_INTERVAL_MS = Number(process.env.REAP_INTERVAL_MS ?? 60_000);
 const KILL_PORT = Number(process.env.KILL_PORT ?? 4999); // local-only kill switch
 const IMAGE = 'raven-sandbox';
@@ -36,12 +29,23 @@ if (!RAVEN_KEY) {
 }
 
 async function post(path: string, body: unknown) {
-  const res = await fetch(`${REGISTRY_URL}${path}`, {
-    method: 'POST',
-    // RAVEN_KEY is the only credential the daemon holds — a bearer token, not a wallet.
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${RAVEN_KEY}` },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${REGISTRY_URL}${path}`, {
+      method: 'POST',
+      // RAVEN_KEY is the only credential the daemon holds — a bearer token, not a wallet.
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${RAVEN_KEY}` },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // A bare "fetch failed" plus an undici stack says nothing about which host or why. Name both:
+    // wrong REGISTRY_URL and a host that simply can't route there look identical otherwise.
+    const cause = (e as { cause?: { code?: string } }).cause?.code ?? (e as Error).message;
+    throw new Error(
+      `cannot reach the registry at ${REGISTRY_URL} (${cause}) — check REGISTRY_URL in contributor/.env, ` +
+        `then from this host: curl -sS ${REGISTRY_URL}/nodes`,
+    );
+  }
   if (!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
   return res.json() as Promise<any>;
 }
@@ -53,50 +57,30 @@ const sandboxCfg = {
   boreServer: BORE_SERVER,
 };
 
-await logCapabilities(sandboxCfg);
-
-// Fail loudly at startup if the configured backend can't deliver, rather than downgrading silently.
-const backend: SandboxBackend = await selectBackend(SANDBOX_BACKEND, sandboxCfg);
-
 // leaseId -> live handle, so stop() and the reaper have what they need to tear a sandbox down.
 const handles = new Map<string, SandboxHandle>();
 
 async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
-  // The daemon's EGRESS_MODE is the floor; the buyer's request can only narrow it, never widen it.
-  const egress: EgressPolicy = { ...cmd.egress, mode: EGRESS_MODE === 'open' ? cmd.egress.mode : EGRESS_MODE };
-  const handle = await backend.create({
+  const handle = await runContainer(sandboxCfg, {
     leaseId: cmd.leaseId,
     cpuCores: CPUS,
     memMib: MEM_MB,
-    diskMib: 0,
     sshPublicKey: cmd.sshPublicKey,
     sshPassword: cmd.password,
     ttlSeconds: cmd.ttlSeconds,
-    egress,
   });
   handles.set(cmd.leaseId, handle);
-  // Apply the per-lease firewall when the backend exposes a filterable iface (tap-based backends).
-  const iface = handle.internal.iface;
-  if (iface) {
-    await applyEgress(cmd.leaseId, iface, handle.internal.ownCidr ?? '0.0.0.0/32', egress).catch((e) => {
-      console.error(`egress rules failed for ${cmd.leaseId}:`, (e as Error).message);
-    });
-  } else if (egress.mode !== 'open') {
-    console.warn(`egress ${egress.mode} requested but ${backend.name} exposes no filterable iface — not enforced`);
-  }
   await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, host: handle.sshHost, port: handle.sshPort });
   console.log(`lease ${cmd.leaseId} up: ssh root@${handle.sshHost} -p ${handle.sshPort}`);
 }
 
 async function stop(leaseId: string) {
-  const handle = handles.get(leaseId) ?? { leaseId, backend: backend.name, sshHost: '', sshPort: 0, internal: {} };
-  if (handle.internal.iface) await removeEgress(leaseId, handle.internal.iface).catch(() => {});
-  await backend.destroy(handle);
+  await destroyContainer(leaseId);
   handles.delete(leaseId);
   console.log(`lease ${leaseId} torn down`);
 }
 
-// Kill switch: POST http://127.0.0.1:KILL_PORT/kill tears down every live sandbox and its rules now.
+// Kill switch: POST http://127.0.0.1:KILL_PORT/kill tears down every live sandbox right now.
 http
   .createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/kill') {
@@ -111,25 +95,36 @@ http
   })
   .listen(KILL_PORT, '127.0.0.1');
 
-const { nodeId } = await post('/nodes/register', {
-  label: LABEL,
-  cpus: CPUS,
-  memMb: MEM_MB,
-  rateLamportsPerHour: RATE,
-  isolation: backend.tier,
-  isolationBackend: backend.name,
-  egressMode: EGRESS_MODE,
-});
+// Heartbeats already survive a registry that comes and goes, so registration shouldn't be the one
+// call that kills the daemon on a blip. Retry with the reason printed each time — a genuinely wrong
+// REGISTRY_URL shows up as the same line every 10s rather than a stack trace.
+async function register(): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const { nodeId } = await post('/nodes/register', {
+        label: LABEL,
+        cpus: CPUS,
+        memMb: MEM_MB,
+        rateLamportsPerHour: RATE,
+      });
+      return nodeId as string;
+    } catch (e) {
+      console.error(`registration failed (attempt ${attempt}): ${(e as Error).message}`);
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
+  }
+}
+
+const nodeId = await register();
 console.log(
-  `registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour ` +
-    `(${backend.tier} via ${backend.name}, egress ${EGRESS_MODE})`,
+  `registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour`,
 );
 
 // Reap orphans left by a previous daemon run, then on a timer — leases are in-memory, so a sandbox
 // the registry forgot (restart, crash) would otherwise run forever.
 async function reapNow() {
   try {
-    const gone = await reap(backend, new Set(handles.keys()));
+    const gone = await reap({ list: listContainers, destroy: (h) => destroyContainer(h.leaseId) }, new Set(handles.keys()));
     if (gone.length) console.log(`reaped ${gone.length} orphan sandbox(es): ${gone.join(', ')}`);
   } catch (e) {
     console.error('reap failed:', (e as Error).message);
@@ -140,12 +135,7 @@ setInterval(reapNow, REAP_INTERVAL_MS);
 
 setInterval(async () => {
   try {
-    // Report each live lease's egress-drop tally so the registry can suspend an abusive buyer.
-    const dropCounters: Record<string, number> = {};
-    for (const [leaseId, h] of handles) {
-      if (h.internal.iface) dropCounters[leaseId] = await readDropCounter(leaseId);
-    }
-    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, { dropCounters });
+    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, { dropCounters: {} });
     for (const cmd of commands as NodeCommand[]) {
       if (cmd.type === 'start') {
         await start(nodeId, cmd).catch(async (e) => {

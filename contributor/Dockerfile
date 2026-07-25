@@ -1,7 +1,6 @@
-# The contributor daemon, for the local-dev `container` tier ONLY (SANDBOX_BACKEND=docker). It cannot
-# deliver the rentable `microvm` tier: Firecracker needs /dev/kvm, root tap networking, and the
-# firecracker/jailer binaries on the host. A real contributor runs the daemon natively —
-# see contributor/README.md. That's also why there is no `contributor` service in docker-compose.yml.
+# The contributor daemon. It talks to the HOST's Docker daemon through the mounted socket and starts
+# each lease as a sibling container there — so this image ships only the CLI, never a daemon of its
+# own. Run it with `docker compose up -d --build contributor`; see contributor/README.md.
 FROM node:22-slim
 # ponytail: docker.io drags in the daemon we never start; swap for docker-ce-cli if image size matters.
 RUN apt-get update \

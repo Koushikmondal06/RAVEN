@@ -1,19 +1,18 @@
 #!/bin/sh
 set -e
 
-# This script is the sandbox entrypoint in both worlds: the CMD of an OCI container (local dev), and
-# PID 1 of a Firecracker guest (`init=/start.sh`). In the VM there is no container runtime to set the
-# environment up, so do it here — every step is a no-op when a runtime already did it.
+# The sandbox entrypoint: the CMD of the lease's container. The mount/env fallbacks below exist
+# because this script also booted as PID 1 of a Firecracker guest in an earlier revision; each one is
+# a no-op when a container runtime has already done the work.
 
-# Kernel filesystems. A container gets these from the runtime; a microVM boots with nothing mounted.
+# Kernel filesystems — a container gets these from the runtime.
 mountpoint -q /proc 2>/dev/null || mount -t proc proc /proc 2>/dev/null || true
 mountpoint -q /sys 2>/dev/null || mount -t sysfs sysfs /sys 2>/dev/null || true
 mountpoint -q /dev 2>/dev/null || mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mkdir -p /dev/pts 2>/dev/null || true
 mountpoint -q /dev/pts 2>/dev/null || mount -t devpts devpts /dev/pts 2>/dev/null || true
 
-# The container path receives SSH_PUBKEY / SANDBOX_TTL as env vars; the VM path can't (boot args carry
-# no environment), so fc-up.sh writes them into the rootfs and we read them here.
+# The container receives SSH_PUBKEY / SANDBOX_TTL as env vars. The file fallback is harmless legacy.
 if [ -f /etc/raven-net.env ]; then . /etc/raven-net.env; fi
 
 # SSH key is the default. A password is only accepted when the registry explicitly sent one

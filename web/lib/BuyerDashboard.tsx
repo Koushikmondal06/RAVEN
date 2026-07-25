@@ -15,8 +15,7 @@ import {
 } from '@solana/kit';
 import { useWalletAccountTransactionSendingSigner } from '@solana/react';
 import { useCallback, useEffect, useState } from 'react';
-import type { BuyerSummary, IsolationTier, LeaseInfo, NodeInfo } from '../../shared/types';
-import { satisfiesTier } from '../../shared/types';
+import type { BuyerSummary, LeaseInfo, NodeInfo } from '../../shared/types';
 import type { Auth } from './AuthPanel';
 import { CHAIN, LAMPORTS_PER_SOL, RPC_URL, api, clock, sol } from './api';
 import { Stats } from './Dashboard';
@@ -101,17 +100,6 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
   );
 }
 
-const TIER_LABEL: Record<IsolationTier, string> = {
-  container: 'container',
-  'usermode-kernel': 'gVisor',
-  microvm: 'microVM',
-};
-
-// Enforced minimum isolation. gVisor ('usermode-kernel') virtualizes the kernel in userspace with no
-// KVM, so any ordinary Linux VM can host a rentable node — a plain 'container' node (shared host
-// kernel) never can. microVM nodes clear the bar too, being strictly stronger.
-const MIN_ISOLATION: IsolationTier = 'usermode-kernel';
-
 export function Explore() {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
   const [lease, setLease] = useState<LeaseInfo | null>(null);
@@ -134,11 +122,7 @@ export function Explore() {
   const rent = async (nodeId: string) => {
     setError('');
     try {
-      setLease(
-        await api<LeaseInfo>('/leases', {
-          body: { nodeId, minIsolation: MIN_ISOLATION, sshPublicKey: sshPublicKey.trim() },
-        }),
-      );
+      setLease(await api<LeaseInfo>('/leases', { body: { nodeId, sshPublicKey: sshPublicKey.trim() } }));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -146,15 +130,13 @@ export function Explore() {
 
   const keyOk = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+) /.test(sshPublicKey.trim());
 
-  const meetsMin = (n: NodeInfo) => satisfiesTier(n.isolation, MIN_ISOLATION);
-
   return (
     <>
       <section>
         <h2>Explore</h2>
         <p className="sub" style={{ marginBottom: '0.75rem' }}>
-          Minimum isolation: <strong>{TIER_LABEL[MIN_ISOLATION]} or stronger</strong> — every lease runs
-          in a virtualized kernel, never a plain shared-kernel container.
+          Each lease is a hardened, mount-less Docker container on the contributor's machine, reachable
+          over an outbound tunnel. It shares that host's kernel — don't put secrets in one.
         </p>
         <div style={{ marginBottom: '0.75rem' }}>
           <input
@@ -171,8 +153,6 @@ export function Explore() {
             <thead>
               <tr>
                 <th>Node</th>
-                <th>Isolation</th>
-                <th>Egress</th>
                 <th>CPU</th>
                 <th>RAM</th>
                 <th>SOL / hour</th>
@@ -183,18 +163,16 @@ export function Explore() {
               {nodes.map((n) => (
                 <tr key={n.id}>
                   <td>{n.label}</td>
-                  <td title={n.isolationBackend}>{TIER_LABEL[n.isolation]}</td>
-                  <td>{n.egressMode}</td>
                   <td>{n.cpus}</td>
                   <td>{(n.memMb / 1024).toFixed(1)} GB</td>
                   <td>{sol(n.rateLamportsPerHour)}</td>
                   <td>
                     <button
-                      disabled={n.busy || !meetsMin(n) || !keyOk || !!(lease && lease.status !== 'ended')}
+                      disabled={n.busy || !keyOk || !!(lease && lease.status !== 'ended')}
                       title={keyOk ? '' : 'paste an SSH public key first'}
                       onClick={() => rent(n.id)}
                     >
-                      {n.busy ? 'Busy' : !meetsMin(n) ? 'Below min' : 'Rent'}
+                      {n.busy ? 'Busy' : 'Rent'}
                     </button>
                   </td>
                 </tr>

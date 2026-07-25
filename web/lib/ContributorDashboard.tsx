@@ -6,7 +6,6 @@ import type { Auth } from './AuthPanel';
 import { api, clock, sol } from './api';
 import { CopyButton, Stats } from './Dashboard';
 
-const IMAGE = process.env.NEXT_PUBLIC_CONTRIBUTOR_IMAGE ?? 'ghcr.io/your-org/raven-contributor';
 const REPO = process.env.NEXT_PUBLIC_REPO_URL ?? 'https://github.com/your-org/RAVEN.git';
 const RAW_REGISTRY = process.env.NEXT_PUBLIC_REGISTRY_URL || 'http://localhost:4000';
 
@@ -145,7 +144,6 @@ export function ContributorDashboard({ auth }: { auth: Auth }) {
             <thead>
               <tr>
                 <th>Node</th>
-                <th>Isolation</th>
                 <th>CPU</th>
                 <th>RAM</th>
                 <th>SOL / hour</th>
@@ -156,7 +154,6 @@ export function ContributorDashboard({ auth }: { auth: Auth }) {
               {me.nodes.map((n) => (
                 <tr key={n.id}>
                   <td>{n.label}</td>
-                  <td title={n.isolationBackend}>{n.isolation}</td>
                   <td>{n.cpus}</td>
                   <td>{(n.memMb / 1024).toFixed(1)} GB</td>
                   <td>{sol(n.rateLamportsPerHour)}</td>
@@ -174,28 +171,28 @@ export function ContributorDashboard({ auth }: { auth: Auth }) {
 }
 
 function RunDaemon({ apiKey }: { apiKey: string }) {
-  // One command on any ordinary Linux VM: it installs gVisor, writes the config, and starts the
-  // daemon. No KVM, no wallet on the box, no inbound ports.
+  // Anywhere Docker runs. The daemon launches each lease as a sibling container on the host daemon,
+  // which is what the socket mount is for.
   const registry = registryUrl();
   const cmd = `git clone ${REPO} raven && cd raven
-sudo bash contributor/scripts/quickstart.sh ${apiKey} ${registry}`;
+printf 'RAVEN_KEY=%s\nREGISTRY_URL=%s\n' ${apiKey} ${registry} > contributor/.env
+docker compose up -d --build contributor`;
 
   return (
     <section>
       <h2>Run the daemon</h2>
       <p className="sub">
-        On any Linux machine with Docker. The script installs gVisor (runsc), writes the config, and
-        starts your node — it appears in Explore within ~10 seconds. Re-run it any time.
+        Anywhere Docker runs. Your node appears in Explore within ~10 seconds; `docker compose logs -f
+        contributor` follows it.
       </p>
       <code>{cmd}</code>
       <div className="row" style={{ marginTop: '0.75rem' }}>
         <CopyButton text={cmd} label="Copy command" />
       </div>
-      <p className="sub" style={{ marginTop: '0.75rem' }}>
-        Prefer a container? <code style={{ display: 'inline', padding: '0.1rem 0.3rem' }}>
-          docker run -d -e RAVEN_KEY={apiKey} -e REGISTRY_URL={registry} -v /var/run/docker.sock:/var/run/docker.sock {IMAGE}
-        </code>{' '}
-        — but mounting the Docker socket gives that container host root, so it's for local demos only.
+      <p className="sub err" style={{ marginTop: '0.75rem' }}>
+        The daemon mounts the Docker socket to launch each lease as a sibling container, which grants
+        it root on this host. Each lease is a hardened container, but it shares your kernel — run this
+        on a machine you're willing to hand to strangers, not your laptop.
       </p>
     </section>
   );

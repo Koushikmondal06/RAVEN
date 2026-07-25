@@ -1,6 +1,5 @@
-/** Container plumbing for the docker (local-dev) backend: image build, bore tunnel, naming, teardown,
- *  listing. `boreTunnel` is shared with the firecracker backend — a microVM's SSH port needs the same
- *  outbound tunnel to be reachable by a remote buyer. */
+/** The sandbox, end to end: image build, container run, bore tunnel, naming, teardown, listing.
+ *  Every lease is a hardened, mount-less Docker container reachable over an outbound bore tunnel. */
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import { promisify } from 'node:util';
@@ -23,7 +22,7 @@ export type OciConfig = {
   boreServer: string;
 };
 
-/** Env array shared by both backends: SSH key, optional legacy password, guest TTL. */
+/** Env handed to the sandbox: SSH key, optional legacy password, guest self-destruct TTL. */
 export function sandboxEnv(spec: SandboxSpec): string[] {
   const env: string[] = [];
   if (spec.sshPublicKey) env.push('-e', `SSH_PUBKEY=${spec.sshPublicKey}`);
@@ -40,24 +39,14 @@ export async function ensureImage(image: string, context: string) {
   built.add(image);
 }
 
-/** bore prints "listening at bore.pub:PORT" once the remote port is assigned.
- *
- *  `target` says what to forward to. A container publishes port 22 on the host, so the default target
- *  is the host itself via `host.docker.internal`. A microVM's port 22 lives on a host-local tap /30
- *  instead, which the bore container can only route to when it shares the host's network namespace —
- *  hence `hostNetwork`. */
-export async function boreTunnel(
-  cfg: OciConfig,
-  leaseId: string,
-  port: number,
-  target: { host?: string; hostNetwork?: boolean } = {},
-): Promise<{ host: string; port: number }> {
-  const localHost = target.host ?? 'host.docker.internal';
+/** bore prints "listening at bore.pub:PORT" once the remote port is assigned. The sandbox publishes
+ *  port 22 on the host, so the tunnel forwards to the host itself via `host.docker.internal`. */
+export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number): Promise<{ host: string; port: number }> {
   await run('docker', [
     'run', '-d', '--name', tunnelBox(leaseId),
-    ...(target.hostNetwork ? ['--network', 'host'] : ['--add-host=host.docker.internal:host-gateway']),
+    '--add-host=host.docker.internal:host-gateway',
     'ekzhang/bore', 'local', String(port),
-    '--local-host', localHost,
+    '--local-host', 'host.docker.internal',
     '--to', cfg.boreServer,
   ]);
   for (let i = 0; i < 30; i++) {
@@ -69,13 +58,12 @@ export async function boreTunnel(
   throw new Error('bore never reported a remote port');
 }
 
-/** Runs the container (caller supplies backend-specific flags), wires the tunnel, returns a handle. */
-export async function runContainer(
-  cfg: OciConfig,
-  backend: SandboxHandle['backend'],
-  spec: SandboxSpec,
-  extraRunArgs: string[],
-): Promise<SandboxHandle> {
+/** Runs the sandbox container, wires the tunnel, returns a handle.
+ *
+ *  Hardened as far as a shared-kernel container goes: no host filesystem, no new privileges, all
+ *  capabilities dropped, read-only root with noexec/nosuid scratch, capped CPU/RAM/PIDs. The guest
+ *  still shares this host's kernel — a kernel escape lands on the contributor's machine. */
+export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<SandboxHandle> {
   await ensureImage(cfg.image, cfg.imageContext);
   const name = box(spec.leaseId);
   await run('docker', [
@@ -85,7 +73,10 @@ export async function runContainer(
     '--memory', `${spec.memMib}m`,
     '--pids-limit', '512',
     '--security-opt', 'no-new-privileges',
-    ...extraRunArgs,
+    '--cap-drop=ALL',
+    '--read-only',
+    '--tmpfs', '/tmp:rw,noexec,nosuid,size=256m',
+    '--tmpfs', '/run:rw,noexec,nosuid,size=16m',
     ...sandboxEnv(spec),
     cfg.image,
   ]);
@@ -94,7 +85,6 @@ export async function runContainer(
   const where = cfg.tunnelMode === 'bore' ? await boreTunnel(cfg, spec.leaseId, hostPort) : { host: lanIp(), port: hostPort };
   return {
     leaseId: spec.leaseId,
-    backend,
     sshHost: where.host,
     sshPort: where.port,
     internal: { container: name, tunnel: tunnelBox(spec.leaseId) },
@@ -107,7 +97,7 @@ export async function destroyContainer(leaseId: string): Promise<void> {
   }
 }
 
-export async function listContainers(backend: SandboxHandle['backend']): Promise<SandboxHandle[]> {
+export async function listContainers(): Promise<SandboxHandle[]> {
   const { stdout } = await run('docker', ['ps', '--filter', 'name=raven-', '--format', '{{.Names}}']);
   return stdout
     .split('\n')
@@ -115,7 +105,6 @@ export async function listContainers(backend: SandboxHandle['backend']): Promise
     .filter((n) => n.startsWith('raven-') && !n.startsWith('raven-bore-'))
     .map((name) => ({
       leaseId: name.replace(/^raven-/, ''),
-      backend,
       sshHost: '',
       sshPort: 0,
       internal: { container: name },
