@@ -12,6 +12,17 @@ services:
     # Only needed for TUNNEL_MODE=local (and broken on Docker Desktop — run natively there instead).
     # network_mode: host
 
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      # NEXT_PUBLIC_* are baked in at build time — set them in .env before building.
+      args:
+        NEXT_PUBLIC_REGISTRY_URL: ${NEXT_PUBLIC_REGISTRY_URL:-http://localhost:4000}
+        NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
+        NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
+    ports: ['5173:80']
+
   buyer:
     build: { context: ., dockerfile: example-buyer/Dockerfile }
     env_file: .env

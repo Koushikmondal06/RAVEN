@@ -61,7 +61,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_package",
-      "community": 1,
+      "community": 2,
       "norm_label": "package.json"
     },
     {
@@ -71,7 +71,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "backend_package_name",
-      "community": 1,
+      "community": 2,
       "norm_label": "name"
     },
     {
@@ -81,7 +81,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "backend_package_private",
-      "community": 1,
+      "community": 2,
       "norm_label": "private"
     },
     {
@@ -91,7 +91,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "backend_package_type",
-      "community": 1,
+      "community": 2,
       "norm_label": "type"
     },
     {
@@ -101,7 +101,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "backend_package_scripts",
-      "community": 1,
+      "community": 2,
       "norm_label": "scripts"
     },
     {
@@ -111,7 +111,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "backend_package_scripts_start",
-      "community": 1,
+      "community": 2,
       "norm_label": "start"
     },
     {
@@ -121,7 +121,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "backend_package_scripts_dev",
-      "community": 1,
+      "community": 2,
       "norm_label": "dev"
     },
     {
@@ -131,7 +131,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "backend_package_scripts_test",
-      "community": 1,
+      "community": 2,
       "norm_label": "test"
     },
     {
@@ -141,7 +141,7 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "backend_package_dependencies",
-      "community": 1,
+      "community": 2,
       "norm_label": "dependencies"
     },
     {
@@ -151,7 +151,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "backend_package_dependencies_solana_program_system",
-      "community": 1,
+      "community": 2,
       "norm_label": "@solana-program/system"
     },
     {
@@ -161,7 +161,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "backend_package_dependencies_solana_kit",
-      "community": 1,
+      "community": 2,
       "norm_label": "@solana/kit"
     },
     {
@@ -171,7 +171,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "backend_package_dependencies_cors",
-      "community": 1,
+      "community": 2,
       "norm_label": "cors"
     },
     {
@@ -181,7 +181,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "backend_package_dependencies_dotenv",
-      "community": 1,
+      "community": 2,
       "norm_label": "dotenv"
     },
     {
@@ -191,7 +191,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "backend_package_dependencies_express",
-      "community": 1,
+      "community": 2,
       "norm_label": "express"
     },
     {
@@ -201,7 +201,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "backend_package_dependencies_pg",
-      "community": 1,
+      "community": 2,
       "norm_label": "pg"
     },
     {
@@ -211,7 +211,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "backend_package_dependencies_tweetnacl",
-      "community": 1,
+      "community": 2,
       "norm_label": "tweetnacl"
     },
     {
@@ -221,7 +221,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "backend_package_devdependencies",
-      "community": 1,
+      "community": 2,
       "norm_label": "devdependencies"
     },
     {
@@ -231,7 +231,7 @@
       "source_location": "L20",
       "_origin": "ast",
       "id": "backend_package_devdependencies_types_cors",
-      "community": 1,
+      "community": 2,
       "norm_label": "@types/cors"
     },
     {
@@ -241,7 +241,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "backend_package_devdependencies_types_express",
-      "community": 1,
+      "community": 2,
       "norm_label": "@types/express"
     },
     {
@@ -251,7 +251,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "backend_package_devdependencies_types_node",
-      "community": 1,
+      "community": 2,
       "norm_label": "@types/node"
     },
     {
@@ -261,7 +261,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "id": "backend_package_devdependencies_types_pg",
-      "community": 1,
+      "community": 2,
       "norm_label": "@types/pg"
     },
     {
@@ -271,7 +271,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "backend_package_devdependencies_tsx",
-      "community": 1,
+      "community": 2,
       "norm_label": "tsx"
     },
     {
@@ -775,7 +775,7 @@
       },
       "_origin": "ast",
       "id": "sandbox_start",
-      "community": 2,
+      "community": 1,
       "norm_label": "start.sh"
     },
     {
@@ -789,7 +789,7 @@
       },
       "_origin": "ast",
       "id": "users_fusion_code_gitrepos_raven_contributor_sandbox_start_sh__entry",
-      "community": 2,
+      "community": 1,
       "norm_label": "start.sh script"
     },
     {
@@ -799,7 +799,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "contributor_src_index_ts_src_index",
-      "community": 4,
+      "community": 6,
       "norm_label": "index.ts"
     },
     {
@@ -809,7 +809,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "src_index_run",
-      "community": 4,
+      "community": 6,
       "norm_label": "run"
     },
     {
@@ -819,7 +819,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "src_index_cpus",
-      "community": 4,
+      "community": 6,
       "norm_label": "cpus"
     },
     {
@@ -829,7 +829,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "src_index_mem_mb",
-      "community": 4,
+      "community": 6,
       "norm_label": "mem_mb"
     },
     {
@@ -839,7 +839,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "src_index_box",
-      "community": 4,
+      "community": 6,
       "norm_label": "box()"
     },
     {
@@ -849,7 +849,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "id": "src_index_tunnelbox",
-      "community": 4,
+      "community": 6,
       "norm_label": "tunnelbox()"
     },
     {
@@ -859,7 +859,7 @@
       "source_location": "L25",
       "_origin": "ast",
       "id": "src_index_lanip",
-      "community": 4,
+      "community": 6,
       "norm_label": "lanip()"
     },
     {
@@ -869,7 +869,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "id": "src_index_boretunnel",
-      "community": 4,
+      "community": 6,
       "norm_label": "boretunnel()"
     },
     {
@@ -879,7 +879,7 @@
       "source_location": "L48",
       "_origin": "ast",
       "id": "src_index_start",
-      "community": 4,
+      "community": 6,
       "norm_label": "start()"
     },
     {
@@ -889,7 +889,7 @@
       "source_location": "L68",
       "_origin": "ast",
       "id": "src_index_stop",
-      "community": 4,
+      "community": 6,
       "norm_label": "stop()"
     },
     {
@@ -899,7 +899,7 @@
       "source_location": "L75",
       "_origin": "ast",
       "id": "src_index_post",
-      "community": 4,
+      "community": 6,
       "norm_label": "post()"
     },
     {
@@ -1069,7 +1069,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "example_buyer_src_index_ts_src_index",
-      "community": 2,
+      "community": 1,
       "norm_label": "index.ts"
     },
     {
@@ -1079,7 +1079,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "src_index_topup_sol",
-      "community": 2,
+      "community": 1,
       "norm_label": "topup_sol"
     },
     {
@@ -1089,7 +1089,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "id": "src_index_secretkey",
-      "community": 2,
+      "community": 1,
       "norm_label": "secretkey"
     },
     {
@@ -1099,7 +1099,7 @@
       "source_location": "L39",
       "_origin": "ast",
       "id": "src_index_keypair",
-      "community": 2,
+      "community": 1,
       "norm_label": "keypair"
     },
     {
@@ -1109,7 +1109,7 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "src_index_myaddress",
-      "community": 2,
+      "community": 1,
       "norm_label": "myaddress"
     },
     {
@@ -1119,7 +1119,7 @@
       "source_location": "L43",
       "_origin": "ast",
       "id": "src_index_api",
-      "community": 2,
+      "community": 1,
       "norm_label": "api()"
     },
     {
@@ -1129,7 +1129,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "src_index_sol",
-      "community": 2,
+      "community": 1,
       "norm_label": "sol()"
     },
     {
@@ -1139,7 +1139,7 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "src_index_sleep",
-      "community": 2,
+      "community": 1,
       "norm_label": "sleep()"
     },
     {
@@ -1159,7 +1159,7 @@
       "source_location": "L66",
       "_origin": "ast",
       "id": "src_index_topup",
-      "community": 2,
+      "community": 1,
       "norm_label": "topup()"
     },
     {
@@ -1169,7 +1169,7 @@
       "source_location": "L105",
       "_origin": "ast",
       "id": "src_index_sshrun",
-      "community": 2,
+      "community": 1,
       "norm_label": "sshrun()"
     },
     {
@@ -1179,7 +1179,7 @@
       "source_location": "L128",
       "_origin": "ast",
       "id": "src_index_wallet",
-      "community": 2,
+      "community": 1,
       "norm_label": "wallet"
     },
     {
@@ -1189,7 +1189,7 @@
       "source_location": "L134",
       "_origin": "ast",
       "id": "example_buyer_src_index_ts_src_index_nodes",
-      "community": 2,
+      "community": 1,
       "norm_label": "nodes"
     },
     {
@@ -1199,8 +1199,118 @@
       "source_location": "L139",
       "_origin": "ast",
       "id": "example_buyer_src_index_ts_src_index_lease",
-      "community": 2,
+      "community": 1,
       "norm_label": "lease"
+    },
+    {
+      "label": "tsconfig.json",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig",
+      "community": 10,
+      "norm_label": "tsconfig.json"
+    },
+    {
+      "label": "compilerOptions",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions",
+      "community": 10,
+      "norm_label": "compileroptions"
+    },
+    {
+      "label": "target",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_target",
+      "community": 10,
+      "norm_label": "target"
+    },
+    {
+      "label": "module",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_module",
+      "community": 10,
+      "norm_label": "module"
+    },
+    {
+      "label": "moduleResolution",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_moduleresolution",
+      "community": 10,
+      "norm_label": "moduleresolution"
+    },
+    {
+      "label": "strict",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_strict",
+      "community": 10,
+      "norm_label": "strict"
+    },
+    {
+      "label": "skipLibCheck",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_skiplibcheck",
+      "community": 10,
+      "norm_label": "skiplibcheck"
+    },
+    {
+      "label": "esModuleInterop",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L8",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_esmoduleinterop",
+      "community": 10,
+      "norm_label": "esmoduleinterop"
+    },
+    {
+      "label": "noEmit",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L9",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_noemit",
+      "community": 10,
+      "norm_label": "noemit"
+    },
+    {
+      "label": "types",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_compileroptions_types",
+      "community": 10,
+      "norm_label": "types"
+    },
+    {
+      "label": "include",
+      "file_type": "code",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L12",
+      "_origin": "ast",
+      "id": "example_buyer_tsconfig_include",
+      "community": 10,
+      "norm_label": "include"
     },
     {
       "label": "package.json",
@@ -1209,7 +1319,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "package",
-      "community": 6,
+      "community": 7,
       "norm_label": "package.json"
     },
     {
@@ -1219,7 +1329,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "package_name",
-      "community": 6,
+      "community": 7,
       "norm_label": "name"
     },
     {
@@ -1229,7 +1339,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "package_private",
-      "community": 6,
+      "community": 7,
       "norm_label": "private"
     },
     {
@@ -1239,7 +1349,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "package_type",
-      "community": 6,
+      "community": 7,
       "norm_label": "type"
     },
     {
@@ -1249,7 +1359,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "package_workspaces",
-      "community": 6,
+      "community": 7,
       "norm_label": "workspaces"
     },
     {
@@ -1259,7 +1369,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "package_scripts",
-      "community": 6,
+      "community": 7,
       "norm_label": "scripts"
     },
     {
@@ -1269,7 +1379,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "package_scripts_backend",
-      "community": 6,
+      "community": 7,
       "norm_label": "backend"
     },
     {
@@ -1279,7 +1389,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "package_scripts_contributor",
-      "community": 6,
+      "community": 7,
       "norm_label": "contributor"
     },
     {
@@ -1289,7 +1399,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "package_scripts_client",
-      "community": 6,
+      "community": 7,
       "norm_label": "client"
     },
     {
@@ -1299,7 +1409,7 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "package_scripts_web",
-      "community": 6,
+      "community": 7,
       "norm_label": "web"
     },
     {
@@ -1309,7 +1419,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "package_scripts_test",
-      "community": 6,
+      "community": 7,
       "norm_label": "test"
     },
     {
@@ -1319,7 +1429,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "package_scripts_typecheck",
-      "community": 6,
+      "community": 7,
       "norm_label": "typecheck"
     },
     {
@@ -1329,7 +1439,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "package_devdependencies",
-      "community": 6,
+      "community": 7,
       "norm_label": "devdependencies"
     },
     {
@@ -1339,7 +1449,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "package_devdependencies_tsx",
-      "community": 6,
+      "community": 7,
       "norm_label": "tsx"
     },
     {
@@ -1349,7 +1459,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "package_devdependencies_typescript",
-      "community": 6,
+      "community": 7,
       "norm_label": "typescript"
     },
     {
@@ -1359,7 +1469,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "shared_env",
-      "community": 0,
+      "community": 1,
       "norm_label": "env.ts"
     },
     {
@@ -1369,7 +1479,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "shared_types",
-      "community": 2,
+      "community": 1,
       "norm_label": "types.ts"
     },
     {
@@ -1379,7 +1489,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "shared_types_nodeinfo",
-      "community": 2,
+      "community": 1,
       "norm_label": "nodeinfo"
     },
     {
@@ -1389,7 +1499,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "shared_types_leasestatus",
-      "community": 2,
+      "community": 1,
       "norm_label": "leasestatus"
     },
     {
@@ -1399,7 +1509,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "shared_types_leaseinfo",
-      "community": 2,
+      "community": 1,
       "norm_label": "leaseinfo"
     },
     {
@@ -1409,7 +1519,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "shared_types_nodecommand",
-      "community": 4,
+      "community": 1,
       "norm_label": "nodecommand"
     },
     {
@@ -1419,7 +1529,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "tsconfig",
-      "community": 10,
+      "community": 11,
       "norm_label": "tsconfig.json"
     },
     {
@@ -1429,7 +1539,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "tsconfig_compileroptions",
-      "community": 10,
+      "community": 11,
       "norm_label": "compileroptions"
     },
     {
@@ -1439,7 +1549,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_target",
-      "community": 10,
+      "community": 11,
       "norm_label": "target"
     },
     {
@@ -1449,7 +1559,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_module",
-      "community": 10,
+      "community": 11,
       "norm_label": "module"
     },
     {
@@ -1459,7 +1569,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_moduleresolution",
-      "community": 10,
+      "community": 11,
       "norm_label": "moduleresolution"
     },
     {
@@ -1469,7 +1579,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_strict",
-      "community": 10,
+      "community": 11,
       "norm_label": "strict"
     },
     {
@@ -1479,7 +1589,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_skiplibcheck",
-      "community": 10,
+      "community": 11,
       "norm_label": "skiplibcheck"
     },
     {
@@ -1489,7 +1599,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_esmoduleinterop",
-      "community": 10,
+      "community": 11,
       "norm_label": "esmoduleinterop"
     },
     {
@@ -1499,7 +1609,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_noemit",
-      "community": 10,
+      "community": 11,
       "norm_label": "noemit"
     },
     {
@@ -1509,7 +1619,7 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "tsconfig_compileroptions_types",
-      "community": 10,
+      "community": 11,
       "norm_label": "types"
     },
     {
@@ -1519,7 +1629,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "tsconfig_include",
-      "community": 10,
+      "community": 11,
       "norm_label": "include"
     },
     {
@@ -1529,7 +1639,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "web_package",
-      "community": 3,
+      "community": 4,
       "norm_label": "package.json"
     },
     {
@@ -1539,7 +1649,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "web_package_name",
-      "community": 3,
+      "community": 4,
       "norm_label": "name"
     },
     {
@@ -1549,7 +1659,7 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "web_package_private",
-      "community": 3,
+      "community": 4,
       "norm_label": "private"
     },
     {
@@ -1559,7 +1669,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "web_package_type",
-      "community": 3,
+      "community": 4,
       "norm_label": "type"
     },
     {
@@ -1569,7 +1679,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "web_package_scripts",
-      "community": 3,
+      "community": 4,
       "norm_label": "scripts"
     },
     {
@@ -1579,7 +1689,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "web_package_scripts_dev",
-      "community": 3,
+      "community": 4,
       "norm_label": "dev"
     },
     {
@@ -1589,7 +1699,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "web_package_scripts_build",
-      "community": 3,
+      "community": 4,
       "norm_label": "build"
     },
     {
@@ -1599,7 +1709,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "web_package_scripts_preview",
-      "community": 3,
+      "community": 4,
       "norm_label": "preview"
     },
     {
@@ -1609,7 +1719,7 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "web_package_dependencies",
-      "community": 3,
+      "community": 4,
       "norm_label": "dependencies"
     },
     {
@@ -1619,7 +1729,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "web_package_dependencies_solana_program_system",
-      "community": 3,
+      "community": 4,
       "norm_label": "@solana-program/system"
     },
     {
@@ -1629,7 +1739,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "web_package_dependencies_solana_kit",
-      "community": 3,
+      "community": 4,
       "norm_label": "@solana/kit"
     },
     {
@@ -1639,7 +1749,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "web_package_dependencies_solana_react",
-      "community": 3,
+      "community": 4,
       "norm_label": "@solana/react"
     },
     {
@@ -1649,7 +1759,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "web_package_dependencies_wallet_standard_react",
-      "community": 3,
+      "community": 4,
       "norm_label": "@wallet-standard/react"
     },
     {
@@ -1659,7 +1769,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "web_package_dependencies_react",
-      "community": 3,
+      "community": 4,
       "norm_label": "react"
     },
     {
@@ -1669,7 +1779,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "web_package_dependencies_react_dom",
-      "community": 3,
+      "community": 4,
       "norm_label": "react-dom"
     },
     {
@@ -1679,7 +1789,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "web_package_devdependencies",
-      "community": 3,
+      "community": 4,
       "norm_label": "devdependencies"
     },
     {
@@ -1689,7 +1799,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "web_package_devdependencies_types_react",
-      "community": 3,
+      "community": 4,
       "norm_label": "@types/react"
     },
     {
@@ -1699,7 +1809,7 @@
       "source_location": "L20",
       "_origin": "ast",
       "id": "web_package_devdependencies_types_react_dom",
-      "community": 3,
+      "community": 4,
       "norm_label": "@types/react-dom"
     },
     {
@@ -1709,7 +1819,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "web_package_devdependencies_vitejs_plugin_react",
-      "community": 3,
+      "community": 4,
       "norm_label": "@vitejs/plugin-react"
     },
     {
@@ -1719,7 +1829,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "web_package_devdependencies_vite",
-      "community": 3,
+      "community": 4,
       "norm_label": "vite"
     },
     {
@@ -1729,7 +1839,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_app",
-      "community": 7,
+      "community": 3,
       "norm_label": "app.tsx"
     },
     {
@@ -1739,7 +1849,7 @@
       "source_location": "L25",
       "_origin": "ast",
       "id": "src_app_rpc",
-      "community": 7,
+      "community": 3,
       "norm_label": "rpc"
     },
     {
@@ -1749,7 +1859,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "src_app_chain",
-      "community": 7,
+      "community": 3,
       "norm_label": "chain"
     },
     {
@@ -1759,7 +1869,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "src_app_app",
-      "community": 11,
+      "community": 3,
       "norm_label": "app()"
     },
     {
@@ -1769,7 +1879,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "src_app_connect",
-      "community": 7,
+      "community": 3,
       "norm_label": "connect()"
     },
     {
@@ -1779,7 +1889,7 @@
       "source_location": "L71",
       "_origin": "ast",
       "id": "src_app_connectbutton",
-      "community": 7,
+      "community": 3,
       "norm_label": "connectbutton()"
     },
     {
@@ -1789,7 +1899,7 @@
       "source_location": "L86",
       "_origin": "ast",
       "id": "src_app_wallet",
-      "community": 7,
+      "community": 3,
       "norm_label": "wallet()"
     },
     {
@@ -1799,7 +1909,7 @@
       "source_location": "L197",
       "_origin": "ast",
       "id": "src_app_explore",
-      "community": 7,
+      "community": 3,
       "norm_label": "explore()"
     },
     {
@@ -1809,7 +1919,7 @@
       "source_location": "L268",
       "_origin": "ast",
       "id": "src_app_lease",
-      "community": 7,
+      "community": 3,
       "norm_label": "lease()"
     },
     {
@@ -1819,7 +1929,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_api",
-      "community": 7,
+      "community": 3,
       "norm_label": "api.ts"
     },
     {
@@ -1829,7 +1939,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "src_api_chain",
-      "community": 7,
+      "community": 3,
       "norm_label": "chain"
     },
     {
@@ -1839,7 +1949,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "src_api_api",
-      "community": 7,
+      "community": 3,
       "norm_label": "api()"
     },
     {
@@ -1849,7 +1959,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "src_api_sol",
-      "community": 7,
+      "community": 3,
       "norm_label": "sol()"
     },
     {
@@ -1859,7 +1969,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "src_api_clock",
-      "community": 7,
+      "community": 3,
       "norm_label": "clock()"
     },
     {
@@ -1869,7 +1979,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "src_main",
-      "community": 11,
+      "community": 3,
       "norm_label": "main.tsx"
     },
     {
@@ -2110,7 +2220,7 @@
       "contributor": null,
       "rationale": "The renter's wallet address is the root password on a throwaway container \u2014 fine for ephemeral compute, but a password, not a key.",
       "id": "readme_per_lease_password",
-      "community": 2,
+      "community": 1,
       "norm_label": "per-lease ssh password"
     },
     {
@@ -2124,7 +2234,7 @@
       "contributor": null,
       "rationale": "Default TUNNEL_MODE=bore means the contributor needs no inbound ports; each SSH sandbox dials out.",
       "id": "readme_bore_tunnel",
-      "community": 4,
+      "community": 6,
       "norm_label": "bore outbound tunnel"
     },
     {
@@ -2138,7 +2248,7 @@
       "contributor": null,
       "rationale": "The contributor mounts the host Docker socket and launches each rented sandbox on the host daemon, so nothing extra is installed.",
       "id": "readme_sibling_container_sandbox",
-      "community": 4,
+      "community": 6,
       "norm_label": "sibling-container sandbox"
     },
     {
@@ -2152,7 +2262,7 @@
       "contributor": null,
       "rationale": "The wallet stack is client-only, so an SPA avoids SSR/hydration friction.",
       "id": "readme_spa_not_ssr",
-      "community": 11,
+      "community": 3,
       "norm_label": "vite spa instead of next.js"
     },
     {
@@ -2165,7 +2275,7 @@
       "author": null,
       "contributor": null,
       "id": "readme_env_precedence",
-      "community": 0,
+      "community": 1,
       "norm_label": "env precedence (inline > app .env > root .env)"
     },
     {
@@ -2178,7 +2288,7 @@
       "author": null,
       "contributor": null,
       "id": "readme_human_path",
-      "community": 11,
+      "community": 3,
       "norm_label": "human rental path"
     },
     {
@@ -2191,7 +2301,7 @@
       "author": null,
       "contributor": null,
       "id": "readme_autonomous_path",
-      "community": 11,
+      "community": 3,
       "norm_label": "autonomous agent rental path"
     },
     {
@@ -2218,7 +2328,7 @@
       "author": null,
       "contributor": null,
       "id": "docker_compose_backend_service",
-      "community": 0,
+      "community": 1,
       "norm_label": "backend compose service"
     },
     {
@@ -2231,7 +2341,7 @@
       "author": null,
       "contributor": null,
       "id": "docker_compose_contributor_service",
-      "community": 4,
+      "community": 6,
       "norm_label": "contributor compose service"
     },
     {
@@ -2244,7 +2354,7 @@
       "author": null,
       "contributor": null,
       "id": "docker_compose_buyer_service",
-      "community": 2,
+      "community": 1,
       "norm_label": "buyer compose service"
     },
     {
@@ -2257,7 +2367,7 @@
       "author": null,
       "contributor": null,
       "id": "docker_compose_docker_socket_mount",
-      "community": 4,
+      "community": 6,
       "norm_label": "host docker socket mount"
     },
     {
@@ -2270,7 +2380,7 @@
       "author": null,
       "contributor": null,
       "id": "web_index_shell",
-      "community": 11,
+      "community": 3,
       "norm_label": "web spa shell"
     },
     {
@@ -2284,8 +2394,36 @@
       "contributor": null,
       "rationale": "Styles live inline in index.html rather than a CSS module \u2014 the surface is small enough that a separate stylesheet would be one more file to keep in sync.",
       "id": "web_index_dark_theme",
-      "community": 11,
+      "community": 3,
       "norm_label": "inline dark terminal theme"
+    },
+    {
+      "label": "example-buyer/README (duplicate of root)",
+      "file_type": "document",
+      "source_file": "example-buyer/README.md",
+      "source_location": "example-buyer/README.md:1",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Byte-for-byte copy of the root README left over from an earlier build attempt; adds no new content and is a candidate for deletion.",
+      "id": "example_buyer_readme_duplicate",
+      "community": 0,
+      "norm_label": "example-buyer/readme (duplicate of root)"
+    },
+    {
+      "label": "example-buyer/docker-compose (duplicate of root)",
+      "file_type": "document",
+      "source_file": "example-buyer/docker-compose.yml",
+      "source_location": "example-buyer/docker-compose.yml:1",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Copy of the root docker-compose.yml (same backend/contributor/buyer services); the real compose file lives at the repo root.",
+      "id": "example_buyer_compose_duplicate",
+      "community": 1,
+      "norm_label": "example-buyer/docker-compose (duplicate of root)"
     }
   ],
   "links": [
@@ -3903,6 +4041,16 @@
       "target": "example_buyer_src_index_ts_src_index"
     },
     {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "example-buyer/docker-compose.yml",
+      "source_location": "example-buyer/docker-compose.yml:15",
+      "weight": 1.0,
+      "source": "example_buyer_compose_duplicate",
+      "target": "example_buyer_src_index_ts_src_index"
+    },
+    {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "example-buyer/src/index.ts",
@@ -4116,6 +4264,106 @@
       "weight": 1.0,
       "source": "readme_per_lease_password",
       "target": "src_index_sshrun"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig",
+      "target": "example_buyer_tsconfig_compileroptions",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L12",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig",
+      "target": "example_buyer_tsconfig_include",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L8",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_esmoduleinterop",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L4",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_module",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L5",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_moduleresolution",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L9",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_noemit",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L7",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_skiplibcheck",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L6",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_strict",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_target",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "example-buyer/tsconfig.json",
+      "source_location": "L10",
+      "weight": 1.0,
+      "source": "example_buyer_tsconfig_compileroptions",
+      "target": "example_buyer_tsconfig_compileroptions_types",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -4979,6 +5227,16 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "example-buyer/README.md",
+      "source_location": "example-buyer/README.md:1",
+      "weight": 1.0,
+      "source": "example_buyer_readme_duplicate",
+      "target": "readme_raven"
+    },
+    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
@@ -5049,6 +5307,16 @@
       "target": "readme_autonomous_path"
     },
     {
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "example-buyer/docker-compose.yml",
+      "source_location": "example-buyer/docker-compose.yml:2",
+      "weight": 1.0,
+      "source": "example_buyer_compose_duplicate",
+      "target": "docker_compose_backend_service"
+    },
+    {
       "relation": "conceptually_related_to",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
@@ -5109,5 +5377,5 @@
       "source_file": "/Users/fusion/Code/GitRepos/RAVEN/README.md"
     }
   ],
-  "built_at_commit": "ce2979386413079511d013838084430aec1e13be"
+  "built_at_commit": "fbea59e6b96a5e02e23a89c5baf051f00b3c25a1"
 }

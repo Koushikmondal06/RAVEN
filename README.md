@@ -16,7 +16,7 @@ npm run backend                    # 1. the registry            → :4000
 npm run contributor                # 2. share THIS machine's compute
 
 # 3a. web UI                                                    → http://localhost:5173
-cp web/.env.example web/.env       # set VITE_REGISTRY_URL (defaults to localhost:4000)
+cp web/.env.example web/.env       # set NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
 npm run web                        # connect wallet → Sign in → Top up → Rent → copy the ssh command
 
 # 3b. …or the autonomous agent (its own funded key — signs in, tops up, rents)
@@ -35,8 +35,12 @@ contributor runs on each machine sharing compute and points at that backend via 
 cp .env.example .env                     # then set REGISTRY_URL to your backend
 docker compose up --build backend        # run the backend / registry  → :4000
 docker compose up --build contributor    # share THIS machine's compute
+docker compose up --build web            # static SPA behind nginx      → :5173
 docker compose run  --rm   buyer         # one-shot autonomous buyer
 ```
+
+The `web` image bakes `NEXT_PUBLIC_*` in at build time from `.env` (build args), so set
+`NEXT_PUBLIC_REGISTRY_URL` to your backend before `docker compose build web`.
 
 The contributor doesn't run a Docker of its own: it mounts the host Docker socket and launches each
 rented sandbox as a sibling container on the host daemon, so there's nothing extra to install.
@@ -47,21 +51,23 @@ each SSH sandbox dials out over bore. `network_mode: host` is only needed for `T
 (same-machine SSH), and on Docker Desktop host networking doesn't share the loopback, so for local
 mode run the contributor natively (`npm run contributor`) instead.
 
-## Web app (static SPA)
+## Web app (Next.js static export)
 
-The web app isn't a container — it's a static build you host anywhere:
+Next.js App Router with `output: 'export'` — the wallet stack is client-only, so there is no server
+to run: `next build` emits a plain static bundle you can host anywhere (the `web` Docker image just
+serves it behind nginx).
 
 ```bash
-VITE_REGISTRY_URL=http://your-host:4000 npm run build -w web   # → web/dist
+NEXT_PUBLIC_REGISTRY_URL=http://your-host:4000 npm run build -w web   # → web/out
 ```
 
-Drop `web/dist` on Vercel / Netlify / Cloudflare Pages / nginx.
+Drop `web/out` on Vercel / Netlify / Cloudflare Pages / nginx.
 
 ## Configuration
 
 All Node services read the repo-root `.env` (and each app's own `.env`, which overrides it); inline
-`FOO=bar npm run …` overrides both. The web app reads `web/.env` (`VITE_*` only, baked in at build
-time). See `.env.example` and `web/.env.example` for every variable.
+`FOO=bar npm run …` overrides both. The web app reads `web/.env` (`NEXT_PUBLIC_*` only, baked in at
+build time). See `.env.example` and `web/.env.example` for every variable.
 
 ## Demo script (the money shot)
 
@@ -102,5 +108,5 @@ payouts (funded devnet accounts).
   for ephemeral compute, but it's a password, not a key — use a real key flow for anything sensitive.
 - **Auth:** spending the balance (rent, top-up, wallet read) requires a wallet session token, minted
   only after the user signs a single-use login nonce — so nobody can spend someone else's balance.
-- `web/` uses Vite (not Next.js) deliberately: the wallet stack is client-only, so an SPA avoids
-  SSR/hydration friction.
+- `web/` is Next.js (App Router) exported as a static bundle (`output: 'export'`): the wallet stack
+  is client-only, so every page is a client component and there is no SSR server to run.

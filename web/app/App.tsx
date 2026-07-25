@@ -1,3 +1,5 @@
+'use client';
+
 import { getTransferSolInstruction } from '@solana-program/system';
 import {
   address,
@@ -19,8 +21,8 @@ import {
 import type { UiWallet, UiWalletAccount } from '@wallet-standard/react';
 import { useConnect } from '@wallet-standard/react';
 import { useCallback, useEffect, useState } from 'react';
-import type { LeaseInfo, NodeInfo } from '../../shared/types.js';
-import { CHAIN, LAMPORTS_PER_SOL, RPC_URL, api, clock, sol } from './api.js';
+import type { LeaseInfo, NodeInfo } from '../../shared/types';
+import { CHAIN, LAMPORTS_PER_SOL, RPC_URL, api, clock, sol } from '../lib/api';
 
 const rpc = createSolanaRpc(RPC_URL);
 const chain = `solana:${CHAIN}` as const;

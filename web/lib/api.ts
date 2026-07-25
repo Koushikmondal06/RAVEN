@@ -1,7 +1,8 @@
-const BASE = import.meta.env.VITE_REGISTRY_URL ?? 'http://localhost:4000';
+// NEXT_PUBLIC_* are inlined at build time — the only env visible in a static export.
+const BASE = process.env.NEXT_PUBLIC_REGISTRY_URL ?? 'http://localhost:4000';
 
-export const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
-export const CHAIN = (import.meta.env.VITE_SOLANA_CLUSTER ?? 'devnet') as 'devnet' | 'mainnet' | 'testnet';
+export const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
+export const CHAIN = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? 'devnet') as 'devnet' | 'mainnet' | 'testnet';
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 export async function api<T>(
