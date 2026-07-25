@@ -1,5 +1,6 @@
 /** Picks the sandbox backend from SANDBOX_BACKEND and refuses to run if it can't deliver. */
 import { DockerBackend, type DockerConfig } from './docker.js';
+import { FirecrackerBackend } from './firecracker.js';
 import { GvisorBackend } from './gvisor.js';
 import { KataFirecrackerBackend } from './kata-fc.js';
 import type { SandboxBackend } from './types.js';
@@ -25,6 +26,8 @@ function build(name: string, docker: DockerConfig): SandboxBackend {
       return new GvisorBackend(docker);
     case 'kata-fc':
       return new KataFirecrackerBackend(docker);
+    case 'firecracker':
+      return new FirecrackerBackend(docker);
     default:
       throw new Error(`unknown SANDBOX_BACKEND=${name} (known: docker, gvisor, kata-fc, firecracker)`);
   }
