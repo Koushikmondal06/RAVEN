@@ -43,13 +43,17 @@ export class FirecrackerBackend implements SandboxBackend {
   async probe(): Promise<ProbeResult> {
     const no = (reason: string): ProbeResult => ({ available: false, tier: this.tier, reason });
 
-    if (!/\b(vmx|svm)\b/.test(safeRead('/proc/cpuinfo'))) {
-      return no('no vmx/svm in /proc/cpuinfo — needs bare metal or a nested-virt instance');
-    }
+    // /dev/kvm is the arch-neutral test. vmx/svm is x86-only — aarch64 hosts (Graviton metal, ARM
+    // bare metal) never report it, so checking the flag first would reject hosts Firecracker supports.
     try {
       accessSync('/dev/kvm', constants.R_OK | constants.W_OK);
     } catch {
-      return no('/dev/kvm missing or not read/writable');
+      const x86 = process.arch === 'x64';
+      return no(
+        x86 && !/\b(vmx|svm)\b/.test(safeRead('/proc/cpuinfo'))
+          ? 'cpu exposes no virtualization (no vmx/svm) — needs bare metal or a nested-virt instance'
+          : '/dev/kvm missing or not read/writable — modprobe kvm_intel/kvm_amd, or the host hides KVM',
+      );
     }
     if (process.geteuid?.() !== 0) {
       return no('must run as root: tap setup needs CAP_NET_ADMIN, the rootfs loop-mount CAP_SYS_ADMIN');

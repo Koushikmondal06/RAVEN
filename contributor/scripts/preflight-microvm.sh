@@ -15,18 +15,17 @@ bad() { printf '  FAIL  %s\n' "$1"; fail=1; }
 
 echo "RAVEN microvm preflight (firecracker + jailer)"
 
-# 1. Hardware virtualization — the one requirement no script can install.
-if [ ! -r /proc/cpuinfo ]; then
-  bad "no /proc/cpuinfo — not a Linux host, so Firecracker cannot run here at all"
-elif grep -Eq '\b(vmx|svm)\b' /proc/cpuinfo; then
-  ok "cpu exposes virtualization (vmx/svm)"
-else
-  bad "no vmx/svm in /proc/cpuinfo — needs bare metal or a nested-virt instance"
-fi
-
-# 2. /dev/kvm usable by this user
+# 1. KVM — the one requirement no script can install. /dev/kvm is the arch-neutral test; vmx/svm is an
+# x86-only CPU flag that aarch64 hosts (Graviton metal, ARM bare metal) never report, so it is only
+# used to sharpen the error message.
 if [ ! -e /dev/kvm ]; then
-  bad "/dev/kvm missing — modprobe kvm_intel / kvm_amd, or this host hides KVM (e.g. a standard DigitalOcean droplet)"
+  if [ ! -r /proc/cpuinfo ]; then
+    bad "no /dev/kvm and no /proc/cpuinfo — not a Linux host, so Firecracker cannot run here at all"
+  elif [ "$(uname -m)" = "x86_64" ] && ! grep -Eq '\b(vmx|svm)\b' /proc/cpuinfo; then
+    bad "cpu exposes no virtualization (no vmx/svm) — needs bare metal or a nested-virt instance"
+  else
+    bad "/dev/kvm missing — modprobe kvm_intel / kvm_amd, or this host hides KVM (e.g. a standard DigitalOcean droplet)"
+  fi
 elif [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
   ok "/dev/kvm is read/writable"
 else

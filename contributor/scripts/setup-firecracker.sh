@@ -15,28 +15,35 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root (sudo)"; exit 1; }
 
+ARCH="$(uname -m)"   # firecracker publishes x86_64 and aarch64
+case "$ARCH" in
+  x86_64|aarch64) ;;
+  *) echo "unsupported arch $ARCH (firecracker ships x86_64 and aarch64)"; exit 1 ;;
+esac
+
 # --- the one thing no script can fix ------------------------------------------------------------
-if ! grep -Eq '\b(vmx|svm)\b' /proc/cpuinfo 2>/dev/null; then
+# /dev/kvm is the arch-neutral test. vmx/svm is an x86-only CPU flag — aarch64 hosts (Graviton metal,
+# ARM bare metal) never report it, so gating on the flag would refuse hosts Firecracker supports.
+if [ ! -e /dev/kvm ]; then
+  if [ "$ARCH" = "x86_64" ] && ! grep -Eq '\b(vmx|svm)\b' /proc/cpuinfo 2>/dev/null; then
+    echo "This host's CPU exposes no hardware virtualization (no vmx/svm in /proc/cpuinfo)." >&2
+  else
+    echo "No /dev/kvm on this host. Try: modprobe kvm_intel (or kvm_amd). If that fails, the" >&2
+    echo "hypervisor is hiding KVM from this guest." >&2
+  fi
   cat >&2 <<'MSG'
-This host does not expose hardware virtualization (no vmx/svm in /proc/cpuinfo).
 
 Firecracker needs KVM. It cannot run on macOS, on Apple silicon under Colima/Lima, or on a standard
 cloud VM that hides nested virtualization (e.g. DigitalOcean droplets). Use one of:
   - bare metal (Hetzner / OVH dedicated, your own box)
-  - AWS EC2 *.metal instances
+  - AWS EC2 *.metal instances (x86_64 or Graviton)
   - GCP with nested virtualization enabled on the image
 The RAVEN registry, MongoDB and the web app are happy on an ordinary VM — only the contributor
 daemon needs KVM.
 MSG
   exit 1
 fi
-[ -e /dev/kvm ] || { echo "/dev/kvm is missing — load the kvm module (modprobe kvm_intel / kvm_amd)"; exit 1; }
-
-ARCH="$(uname -m)"   # firecracker publishes x86_64 and aarch64
-case "$ARCH" in
-  x86_64|aarch64) ;;
-  *) echo "unsupported arch $ARCH (firecracker ships x86_64 and aarch64)"; exit 1 ;;
-esac
+[ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo "/dev/kvm is not read/writable — run as root or join the kvm group"; exit 1; }
 
 # curl-or-wget: minimal server images ship one but rarely both.
 if command -v curl >/dev/null 2>&1; then
