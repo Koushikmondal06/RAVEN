@@ -1,0 +1,42 @@
+# Run the contributor daemon natively. The Firecracker backend needs root on the host: it creates a
+# tap per lease (CAP_NET_ADMIN) and loop-mounts each lease's rootfs (CAP_SYS_ADMIN), and it launches
+# every VM through `jailer`, which is what actually confines the guest. This unit confines the
+# *daemon*; jailer + KVM confine the *buyer*.
+#
+#   sudo bash contributor/scripts/setup-firecracker.sh              # firecracker, jailer, kernel, NAT
+#   sudo install -Dm600 contributor.env /etc/raven/contributor.env  # RAVEN_KEY, REGISTRY_URL, …
+#   sudo cp contributor/systemd/raven-contributor.service /etc/systemd/system/
+#   sudo systemctl enable --now raven-contributor
+#
+# Do NOT run this daemon inside a container with /var/run/docker.sock bind-mounted: that mount gives
+# the container host root, so a bug in the daemon owns the machine with no escape needed.
+
+[Unit]
+Description=RAVEN contributor daemon
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+# root, not a service user: see the header. The sandbox boundary is the microVM, not this process.
+User=root
+WorkingDirectory=/opt/raven/contributor
+EnvironmentFile=/etc/raven/contributor.env
+ExecStart=/usr/bin/npx tsx src/index.ts
+Restart=on-failure
+RestartSec=5
+
+# Hardening. jailer only ever *drops* privileges, so NoNewPrivileges is safe to keep.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# ProtectKernelTunables is off: the guest NAT path needs net.ipv4.ip_forward.
+# PrivateTmp is off: the rootfs loop-mount uses a tmpdir that the jailed VM must be able to see.
+# The daemon writes its own tree, the rootfs cache + network slots, and the jailer chroots.
+ReadWritePaths=/opt/raven /var/lib/raven /srv/jailer /var/run/docker.sock
+
+[Install]
+WantedBy=multi-user.target

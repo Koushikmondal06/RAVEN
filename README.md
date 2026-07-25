@@ -3,39 +3,42 @@
 Rent someone else's machine. Pay by the second, in SOL.
 
 A contributor shares a real machine; a buyer (a human in the web app, or an autonomous agent) rents
-it, gets an `ssh` command into a hardened throwaway container, and is billed for the exact seconds
-used. Solana devnet, custodial balances, no on-chain program required.
+it, gets an `ssh` command into a throwaway **gVisor sandbox** (or a Firecracker microVM), and is
+billed for the exact seconds used. Solana devnet, custodial balances, no on-chain program required.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph buyers [Buyers]
-        web["web/ · Next.js static SPA<br/>wallet-standard + @solana/kit"]
-        agent["example-buyer/ · headless agent<br/>(own key; same REST API + ssh2)"]
+        web["web/ · Next.js static SPA<br/>wallet sign-in · paste SSH key · min-tier"]
+        agent["example-buyer/ · headless agent<br/>(own key; generates SSH keypair)"]
     end
 
-    registry["backend/ · registry (Express :4000)<br/>nodes · leases — in memory · JWT sessions<br/>watchdog + billing"]
+    registry["backend/ · registry (Express :4000)<br/>nodes · leases — in memory · JWT sessions<br/>tier gate · watchdog · billing · abuse suspend"]
 
-    subgraph contribs [Contributors]
-        onboarding["Become a Contributor page<br/>wallet sign-in → RAVEN_KEY"]
-        contributor["contributor/ · daemon<br/>RAVEN_KEY bearer · docker · bore tunnel"]
-        sandbox["sandbox · throwaway root container<br/>capped CPU/RAM, no mounts, per-lease SSH pw"]
+    subgraph contribs [Contributor host]
+        contributor["contributor/ · daemon<br/>RAVEN_KEY bearer · reaper · kill switch"]
+        backendsel["SandboxBackend<br/>gvisor (usermode-kernel) | firecracker (microvm) | docker (dev)<br/>(probe gates startup + advertises the tier)"]
+        sandbox["sandbox · virtualized kernel (runsc sentry, or a guest kernel via jailer)<br/>ephemeral, key-only SSH · guest TTL"]
+        egress["per-lease nftables + tc<br/>default-drop · allowlist · drop counter"]
     end
 
     mongo[("MongoDB<br/>users · deposits · charges · payouts<br/>nonces · contributors")]
     solana["Solana devnet<br/>top-up confirm · contributor payout"]
 
-    web -- "wallet sign-in, top-up, rent, release" --> registry
-    onboarding -- "wallet sign-in (role=contributor)" --> registry
-    agent -- "REST + ssh into the sandbox" --> registry
+    web -- "sign-in · top-up · rent(minIsolation, sshPubKey) · release" --> registry
+    agent -- "REST + ssh (key auth)" --> registry
     registry -- "money state, nonces, keys" --> mongo
     registry -- "confirm deposit · send payout" --> solana
     registry -- "start/stop via heartbeat reply" --> contributor
-    contributor -- "register · ready · heartbeat (RAVEN_KEY)" --> registry
-    contributor -- "docker run / rm (host socket)" --> sandbox
+    contributor -- "register(tier, egress) · ready · heartbeat(dropCounters, RAVEN_KEY)" --> registry
+    contributor --> backendsel
+    backendsel -- "create / destroy / list" --> sandbox
+    contributor -- "apply / remove rules" --> egress
+    egress -. "filters" .-> sandbox
     sandbox -- "bore outbound tunnel" --> contributor
-    agent -. "ssh root@bore -p …" .-> sandbox
+    agent -. "ssh -i key root@bore -p …" .-> sandbox
     web -. "copyable ssh command" .-> sandbox
 
     shared["shared/ · wire types imported by all"]
@@ -45,23 +48,64 @@ flowchart LR
 
 | Folder | What it is |
 |---|---|
-| `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, lease lifecycle + billing watchdog. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
-| `contributor/` | Runs on each shared machine. Authenticates with a `RAVEN_KEY` bearer only — no wallet, no keypair — and on command launches a sandbox as a sibling container on the host Docker daemon, over a bore tunnel. |
-| `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack): a Buyer dashboard (`/`) and a "Become a Contributor" page (`/contributor`). |
-| `example-buyer/` | The buyer flow with no human: an agent that holds its own key, signs in, tops up, rents the cheapest node, SSHes in to run a job, then releases. |
+| `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, the isolation-tier gate (`minIsolation`), lease lifecycle + billing watchdog, egress-abuse suspension. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
+| `contributor/` | Runs on each shared machine (any Linux host with Docker; `/dev/kvm` + root only for the microVM tier). `RAVEN_KEY` bearer only (no wallet). A `SandboxBackend` (`src/sandbox/`, selected by `SANDBOX_BACKEND`) runs each lease as a **gVisor sandbox** — or a Firecracker microVM under `jailer` — and publishes its SSH port over a bore tunnel; a per-lease nftables firewall (`src/net/`) filters egress on the guest's tap; a reaper destroys orphans; a local kill switch tears everything down. `docker` is a local-dev backend only. **One-command setup: [contributor/README.md](contributor/README.md).** |
+| `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack), and one **Rent / Contribute switch** flips between the two dashboards on the same session — the same wallet can be both. Buyer side (`/`): balance, total lease time, lease count, spend, tier badges, SSH-key field, minimum-tier gate ("Below min" on weaker nodes). Contributor side (`/contributor`): earnings (incl. unsettled), balance, leases given, time given, your nodes, and up to two contributor keys. |
+| `example-buyer/` | The buyer flow with no human: an agent that generates an ephemeral SSH keypair, signs in, tops up, requests the strongest tier (with explicit fallback), SSHes in with key auth, then releases. |
 
 **Auth (both roles, same flow)**
 1. Connect Wallet (wallet-standard: Phantom / Solflare / Backpack — Solana only).
 2. `GET /auth/nonce?address=<pubkey>` → single-use nonce (stored in Mongo, 5-min TTL).
 3. Sign `Sign in to RAVEN: <nonce>` with the wallet (`signMessage`).
-4. `POST /auth/verify {address, signature, role}` → backend verifies with tweetnacl, mints a **JWT** (`SESSION_SECRET`, 24h). Role is which page you started from — no separate auth.
+4. `POST /auth/verify {address, signature, role}` → backend verifies with tweetnacl, mints a **JWT** (`SESSION_SECRET`, 24h). Role is which side of the switch you started on and gates nothing — one session serves both dashboards.
 - **Buyer:** the JWT authorizes `/wallet/topup` (buyer signs a real SOL transfer to `PLATFORM_PAYTO` in their wallet; backend confirms on-chain and credits their balance) and `/leases` (spends balance, no further signing).
-- **Contributor:** verify mints an opaque `rvn_ctb_…` key tied to the verified address in the `contributors` collection; the page shows it plus a one-line `docker run`. The daemon sends only that key as a bearer — the backend resolves it to the payout address server-side, used solely to send the on-chain payout at lease end via `PLATFORM_PRIVATE_KEY`.
+- **Contributor:** the same JWT authorizes `GET /contributor/summary` (earnings + keys + your nodes) and `POST /contributor/keys`, which mints an opaque `rvn_ctb_…` key tied to the verified address in the `contributors` collection — **two per wallet**, so a key can be rolled without stopping the machine already running, and `DELETE /contributor/keys/:key` revokes one. The dashboard shows the key plus a one-line `docker run`. The daemon sends only that key as a bearer — the backend resolves it to the payout address server-side, used solely to send the on-chain payout at lease end via `PLATFORM_PRIVATE_KEY`.
 
 **Lease flow**
 - **Top up** — the wallet sends SOL to `PLATFORM_PAYTO`; registry confirms the tx on-chain (depositor signed, lamports landed) and credits MongoDB, idempotent by signature.
-- **Rent** — `POST /leases` queues a `start` command; the contributor's next heartbeat picks it up, runs the container + bore tunnel, posts `ready`; the lease goes `active` with an `ssh` command.
-- **Release / exhaust** — registry bills the exact seconds used (charge in MongoDB), pays the contributor on-chain, and sends a `stop` command that destroys the container.
+- **Rent** — `POST /leases` (with your SSH public key and an optional `minIsolation`) queues a `start` command; the contributor's next heartbeat picks it up, runs the sandbox + bore tunnel, posts `ready`; the lease goes `active` with an `ssh` command.
+- **Release / exhaust** — registry bills the exact seconds used (charge in MongoDB), pays the contributor on-chain, and sends a `stop` command that destroys the sandbox.
+
+## Isolation tiers
+
+Isolation is a pluggable, advertised, buyer-selectable property of a node. A node reports the
+strongest tier it can actually deliver (`SANDBOX_BACKEND` + a host capability probe at startup); a
+buyer sets a minimum on the lease and the registry never places below it. A node never advertises a
+tier it can't deliver — if the configured backend is unavailable at startup, the daemon refuses to
+register rather than downgrading.
+
+| Tier | `SANDBOX_BACKEND` | Boundary | Needs | Rentable? |
+|---|---|---|---|---|
+| `usermode-kernel` | `gvisor` | every guest syscall served by runsc's userspace sentry | Docker + one script | ✅ **the default** |
+| `microvm` | `firecracker` | own guest kernel under KVM, launched via `jailer` | `/dev/kvm` (bare metal or nested virt) | ✅ stronger, more setup |
+| `container` | `docker` | shared host kernel, namespaces only | nothing | ❌ local dev only — "Below min" |
+
+**Every rentable lease runs in a virtualized kernel.** The marketplace minimum is `usermode-kernel`,
+and it is enforced **server-side**: `POST /leases` applies `MARKET_MIN_ISOLATION` (default
+`usermode-kernel`, override on the registry) even when the client sends no `minIsolation`, so a
+`container` node registers fine but can never be rented — it exists so you can develop the flow on a
+laptop. gVisor is the default because it needs **no KVM**: an ordinary cloud VM qualifies.
+
+**Contributing a machine? → [contributor/README.md](contributor/README.md).** The whole setup, on any
+Linux VM with Docker:
+
+```bash
+git clone <this repo> raven && cd raven
+sudo bash contributor/scripts/quickstart.sh rvn_ctb_… https://api.raven.example
+```
+
+That installs gVisor (`runsc`), writes `contributor/.env`, installs dependencies and starts the
+daemon; the node appears in Explore within ~10s. Idempotent — re-run it any time. The `rvn_ctb_…` key
+comes from the web app's **Contribute** page, which shows this exact command with your key filled in.
+See [contributor/docs/gvisor-setup.md](contributor/docs/gvisor-setup.md).
+
+**The stronger `microvm` tier needs `/dev/kvm`** — bare metal or a nested-virt instance (Hetzner/OVH
+dedicated, AWS EC2 `*.metal`, GCP with nested virt). macOS, Apple silicon under Colima, and standard
+DigitalOcean droplets do **not** expose KVM. Check with
+`bash contributor/scripts/preflight-microvm.sh`, set up with
+`sudo bash contributor/scripts/setup-firecracker.sh`, run with `sudo -E npm run contributor`, and see
+[contributor/docs/microvm-setup.md](contributor/docs/microvm-setup.md). Both non-`container` backends
+compile and self-probe at startup, but each is verified only by hand on a real Linux host — not in CI.
 
 ## Run it
 
@@ -78,9 +122,10 @@ npm run backend
 cp web/.env.example web/.env           # NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
 npm run web                            # Buyer at / · "Become a Contributor" at /contributor
 
-# 3. share THIS machine's compute — get RAVEN_KEY from the /contributor page after signing in
-cp contributor/.env.example contributor/.env   # set RAVEN_KEY
-npm run contributor
+# 3. share THIS machine's compute — any Linux host with Docker (no KVM needed)
+sudo bash contributor/scripts/quickstart.sh rvn_ctb_… http://localhost:4000
+#    gVisor + config + deps + daemon, in one idempotent command. Key: the Contribute page.
+#    Manual equivalent: setup-gvisor.sh, then cp contributor/.env.example contributor/.env, npm run contributor
 
 # …or the autonomous buyer agent (its own funded key — signs in, tops up, rents)
 cp example-buyer/.env.example example-buyer/.env   # set BUYER_PRIVATE_KEY
@@ -96,31 +141,41 @@ Each top-level folder is a self-contained piece you can `cd` into: `backend/`, `
 
 ## Run with Docker
 
-Each piece is its own Compose service, run independently. The backend usually lives on a server; a
-contributor runs on each machine sharing compute and points at that backend via `REGISTRY_URL`.
+The registry, web app and buyer agent each have their own Compose service. **The contributor does
+not** — see below.
 
 ```bash
 # each service reads its own <app>/.env — copy the examples first
 cp backend/.env.example backend/.env
-cp contributor/.env.example contributor/.env
 cp example-buyer/.env.example example-buyer/.env
 docker compose up --build backend        # run the backend / registry  → :4000
-docker compose up --build contributor    # share THIS machine's compute
 docker compose --env-file web/.env up --build web   # static SPA behind nginx → :3000
 docker compose run  --rm   buyer         # one-shot autonomous buyer
 ```
 
+Run these from the **repo root** — the compose file lives there, not inside each app folder.
+
 The `web` image bakes `NEXT_PUBLIC_*` in at build time (build args). Compose interpolates them from
 `--env-file web/.env` (or the shell), so pass `--env-file web/.env` when building the web image.
 
-The contributor doesn't run a Docker of its own: it mounts the host Docker socket and launches each
-rented sandbox as a sibling container on the host daemon, so there's nothing extra to install.
+**Behind https, keep `NEXT_PUBLIC_REGISTRY_URL=/api`** (the compose default). The web image's nginx
+reverse-proxies `/api/` to the `backend` service, so the browser only ever talks to the page's own
+origin. An absolute URL here is the usual "the UI loads but nothing happens" bug: the bundle is
+static, so `http://localhost:4000` means the *visitor's* machine, and any plain-`http` registry URL is
+blocked as mixed content on an `https` page — the requests never leave the browser, which is why the
+backend log stays silent. Only set an absolute URL when the registry has its own https hostname.
+
+**No `contributor` service, deliberately.** Both rentable tiers need host-level access the image can't
+carry honestly: gVisor's `runsc` is registered with the *host's* Docker daemon, and Firecracker needs
+`/dev/kvm` plus root-level tap networking. Containerizing either means `--privileged` or the Docker
+socket — full host root, exactly what the isolation is meant to prevent. Contributors run the daemon
+natively (`contributor/scripts/quickstart.sh`, or the systemd unit); see
+[contributor/docs/daemon-isolation.md](contributor/docs/daemon-isolation.md). `contributor/Dockerfile`
+remains for the local-dev `container` tier only.
 
 `backend` keeps only money state in MongoDB (`MONGODB_URI`) — no local volume; set `PLATFORM_PAYTO` +
-`PLATFORM_PRIVATE_KEY` too. `contributor` needs no inbound ports in the default `TUNNEL_MODE=bore` —
-each SSH sandbox dials out over bore. `network_mode: host` is only needed for `TUNNEL_MODE=local`
-(same-machine SSH), and on Docker Desktop host networking doesn't share the loopback, so for local
-mode run the contributor natively (`npm run contributor`) instead.
+`PLATFORM_PRIVATE_KEY` too. A contributor needs no inbound ports in the default `TUNNEL_MODE=bore` —
+each lease's SSH port is published outbound over bore.
 
 ## Web app (Next.js static export)
 
@@ -141,20 +196,38 @@ There is no root `.env` — each app reads its own: `backend/.env`, `web/.env`, 
 `MAINNET`) are baked in at build time. See each `<app>/.env.example` for its variables; flip
 `MAINNET=true` (backend, web, buyer) to target mainnet-beta instead of devnet.
 
+Isolation + egress are contributor knobs: **`SANDBOX_BACKEND`** picks the tier (`gvisor` default =
+`usermode-kernel`, rentable; `firecracker` = `microvm`, rentable, needs KVM; `docker` = `container`,
+local dev only) and the daemon fails to start if that backend's host requirements aren't met. The
+`FC_*` vars move the guest kernel, rootfs cache, network slots and jailer chroot (firecracker only).
+On the registry, **`MARKET_MIN_ISOLATION`** (default `usermode-kernel`) is the floor every lease must
+clear, applied even when a client sends no `minIsolation`. **`EGRESS_MODE`** (`allowlist` default / `deny-all` / `open`) is applied per
+lease and advertised on the node, so buyers see it before renting. SSH is key-only unless the registry
+sets `ALLOW_PASSWORD_SSH=true` (off by default).
+
 ## Demo script (the money shot)
 
-1. Start the registry and one contributor (a real machine sharing CPU/RAM).
-2. Show the node appear in **Explore** at http://localhost:3000.
-3. **Human path:** connect wallet (devnet) → Sign in → Top up (approve one SOL deposit) → watch the
-   balance appear → click **Rent** → a copyable `ssh root@… -p …` command appears (password = your
-   wallet address) with a balance-driven countdown. `ssh` in. **Release** (or letting the balance hit
-   zero) bills the exact time used and destroys the sandbox.
-4. **Autonomous path:** run `npm run client` and narrate the logs — the agent signs in, tops up if
-   low, rents the cheapest node, runs a tiny training loop on someone else's machine, prints the
-   falling loss, then releases and reports how much balance it drew down. No human clicked anything.
-5. Show `docker ps` during the lease (a hardened, mount-less container) and that it's gone after
-   release. On a devnet explorer, confirm the top-up and the payout to the contributor; in MongoDB,
-   the single `charges` doc (with the billed seconds) and the `payouts` doc.
+1. Start the registry, then two contributors — one `gvisor` (after `quickstart.sh`) and one `docker`
+   anywhere, to show the gate working in both directions.
+2. Show the nodes appear in **Explore** at http://localhost:3000 with their isolation + egress
+   badges: the `gVisor` node's **Rent** button is live, the `container` node's reads **"Below min"**
+   — the registry would reject it too (409 with the tiers it *can* place on).
+3. **Human path:** connect wallet (devnet) → Sign in → Top up (approve one SOL deposit) → paste your
+   SSH public key → click **Rent** → a copyable `ssh root@… -p …` command appears with a
+   balance-driven countdown. `ssh -i your-key` in. **Release** (or letting the balance hit zero) bills
+   the exact time used and destroys the sandbox.
+4. **Autonomous path:** run `npm run client` — the agent generates an ephemeral keypair, signs in,
+   tops up if low, requests the `microvm` tier (logging an explicit fallback if none offers it), runs
+   a tiny training loop over SSH key auth, prints the falling loss, then releases.
+5. Show the boundary: during a gVisor lease, `dmesg | head` inside it shows gVisor's own kernel banner
+   and `docker inspect` on the host shows `Runtime: runsc`. On a microVM lease, `uname -a` inside shows
+   a **guest** kernel while `ps aux | grep firecracker` shows the VMM jailed under uid 30000 with its
+   own `rvn<n>` tap.
+6. Show egress enforcement: from inside a sandbox, `curl https://not-allowlisted.example` hangs/drops
+   while an allowlisted host works; the drop shows up in the per-lease `nft` counter the daemon
+   reports on heartbeat.
+7. On a devnet explorer, confirm the top-up and the payout to the contributor; in MongoDB, the single
+   `charges` doc (with the billed seconds) and the `payouts` doc.
 
 ## What's verified vs. what needs your machine
 
@@ -177,8 +250,27 @@ accounts).
   `METER_INTERVAL_MS` whether the balance is exhausted, so worst-case over-use is one tick.
 - **Nodes + leases are in-memory:** a registry restart drops live sessions (the sockets die anyway).
   This is what keeps the DB quiet — heartbeats and the watchdog never write to MongoDB.
-- **SSH auth is a per-lease password** (your wallet address) over a throwaway root container; fine
-  for ephemeral compute, but it's a password, not a key — use a real key flow for anything sensitive.
+- **SSH auth is key-only** by default: the buyer supplies a public key (the web app takes a pasted
+  key; the agent generates an ephemeral keypair), the sandbox runs `PasswordAuthentication no` /
+  `PermitRootLogin prohibit-password`, and nothing guessable exists on the box. The old
+  wallet-address password returns only behind `ALLOW_PASSWORD_SSH=true`, with a startup warning.
+- **Isolation is a virtualized kernel** (see the table above). Default `gvisor`: every guest syscall is
+  served by runsc's userspace sentry, with all capabilities dropped, a read-only root and `noexec`
+  scratch tmpfs — no KVM required. Optional `firecracker`: its own guest kernel under KVM through
+  `jailer` (chroot, uid/gid 30000, cgroup slice), a per-lease `/30` tap, no host filesystem passed in,
+  and the SSH key injected into a per-lease *copy* of the cached rootfs so it can never reach the next
+  lease. A node advertises only what it can deliver, and the registry enforces both the buyer's
+  `minIsolation` and its own `MARKET_MIN_ISOLATION` floor. On the microVM tier the daemon runs as
+  **root**, and on either tier it can reach the Docker socket — treat a contributor box as dedicated
+  (see [contributor/docs/daemon-isolation.md](contributor/docs/daemon-isolation.md)).
+- **Egress is filtered per lease** (`EGRESS_MODE`, default `allowlist`): default-drop outbound, DNS to
+  the resolver only, the buyer's allowlist, and drops of cloud metadata + RFC1918, enforced with
+  nftables on that lease's tap. A buyer whose lease slams the firewall past `EGRESS_DROP_LIMIT` is
+  suspended; a local kill switch tears every sandbox down at once. (The `container` dev tier has no
+  filterable tap, so it logs that egress is unenforced — it isn't rentable anyway.)
+- **Teardown is guaranteed:** the guest powers itself off at a hard TTL, and a host reaper reconciles
+  live VMs against known leases every `REAP_INTERVAL_MS`, removing the tap, network slot, jail and
+  firewall — so a VM never outlives the registry.
 - **Auth:** both roles connect a Solana wallet and sign a single-use nonce (Mongo, 5-min TTL); verify
   mints a JWT (`SESSION_SECRET`). Spending a balance needs that JWT, so nobody can spend someone
   else's balance. The contributor daemon holds only its `rvn_ctb_…` bearer key — no wallet, no

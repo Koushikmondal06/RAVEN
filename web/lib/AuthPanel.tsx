@@ -10,7 +10,6 @@ import { type Role, api, clearToken, getToken, setToken } from './api';
 export type Auth = {
   account: UiWalletAccount;
   address: string;
-  contributorKey: string | null;
   disconnect: () => void;
 };
 
@@ -21,7 +20,6 @@ export type Auth = {
 export function AuthPanel({ role, title, children }: { role: Role; title: string; children: (auth: Auth) => ReactNode }) {
   const [account, setAccount, wallets] = useSelectedWalletAccount();
   const [token, setTokenState] = useState<string | null>(null);
-  const [contributorKey, setContributorKey] = useState<string | null>(null);
 
   // Read the stored token after mount, not during render (localStorage differs server↔client).
   useEffect(() => setTokenState(getToken()), []);
@@ -29,27 +27,15 @@ export function AuthPanel({ role, title, children }: { role: Role; title: string
   const disconnect = useCallback(() => {
     clearToken();
     setTokenState(null);
-    setContributorKey(null);
     setAccount(undefined);
   }, [setAccount]);
 
   if (!account) return <WalletList wallets={wallets} title={title} onConnected={setAccount} />;
 
   if (!token)
-    return (
-      <SignIn
-        account={account}
-        role={role}
-        title={title}
-        onVerified={(t, key) => {
-          setTokenState(t);
-          setContributorKey(key);
-        }}
-        onDisconnect={disconnect}
-      />
-    );
+    return <SignIn account={account} role={role} title={title} onVerified={setTokenState} onDisconnect={disconnect} />;
 
-  return <>{children({ account, address: account.address, contributorKey, disconnect })}</>;
+  return <>{children({ account, address: account.address, disconnect })}</>;
 }
 
 function WalletList({
@@ -102,7 +88,7 @@ function SignIn({
   account: UiWalletAccount;
   role: Role;
   title: string;
-  onVerified: (token: string, contributorKey: string | null) => void;
+  onVerified: (token: string) => void;
   onDisconnect: () => void;
 }) {
   const signMessage = useSignMessage(account);
@@ -115,12 +101,12 @@ function SignIn({
     try {
       const { message } = await api<{ message: string }>(`/auth/nonce?address=${account.address}`, { auth: false });
       const { signature } = await signMessage({ message: new TextEncoder().encode(message) });
-      const res = await api<{ token: string; contributorKey?: string }>('/auth/verify', {
+      const res = await api<{ token: string }>('/auth/verify', {
         auth: false,
         body: { address: account.address, signature: getBase58Decoder().decode(signature), role },
       });
       setToken(res.token);
-      onVerified(res.token, res.contributorKey ?? null);
+      onVerified(res.token);
     } catch (e) {
       setError((e as Error).message);
     } finally {

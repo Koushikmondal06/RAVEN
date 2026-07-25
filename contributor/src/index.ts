@@ -1,11 +1,12 @@
 import '../../shared/env.js';
 
-import { execFile } from 'node:child_process';
+import http from 'node:http';
 import os from 'node:os';
-import { promisify } from 'node:util';
-import type { NodeCommand } from '../../shared/types.js';
-
-const run = promisify(execFile);
+import type { EgressPolicy, NodeCommand } from '../../shared/types.js';
+import { applyEgress, readDropCounter, removeEgress } from './net/nft.js';
+import { type SandboxBackend, type SandboxHandle, selectBackend } from './sandbox/index.js';
+import { logCapabilities } from './sandbox/probe.js';
+import { reap } from './sandbox/reaper.js';
 
 // The daemon needs exactly two things: which registry to call, and the bearer key that identifies it.
 // No wallet, no keypair, no payout address ever runs on this box — the backend resolves RAVEN_KEY to a
@@ -18,6 +19,13 @@ const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
 const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
+// gvisor is the default: it clears the marketplace minimum and needs no KVM, so an ordinary Linux VM
+// works. firecracker (microvm) is stronger but needs /dev/kvm; 'docker' is local dev, unrentable.
+const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'gvisor';
+// Default-deny-ish: only DNS + a buyer's allowlist leave the sandbox. Set 'open' to disable.
+const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'allowlist') as EgressPolicy['mode'];
+const REAP_INTERVAL_MS = Number(process.env.REAP_INTERVAL_MS ?? 60_000);
+const KILL_PORT = Number(process.env.KILL_PORT ?? 4999); // local-only kill switch
 const IMAGE = 'raven-sandbox';
 
 if (!RAVEN_KEY) {
@@ -25,59 +33,6 @@ if (!RAVEN_KEY) {
     'RAVEN_KEY is not set. Sign in on the "Become a Contributor" page to get one, then run with ' +
       '-e RAVEN_KEY=rvn_ctb_… (and REGISTRY_URL if the backend is not on localhost).',
   );
-}
-
-const box = (leaseId: string) => `raven-${leaseId.slice(0, 8)}`;
-const tunnelBox = (leaseId: string) => `raven-bore-${leaseId.slice(0, 8)}`;
-
-const lanIp = () =>
-  Object.values(os.networkInterfaces())
-    .flat()
-    .find((i) => i && i.family === 'IPv4' && !i.internal)?.address ?? '127.0.0.1';
-
-/** bore prints "listening at bore.pub:PORT" once the remote port is assigned. */
-async function boreTunnel(leaseId: string, hostPort: number): Promise<{ host: string; port: number }> {
-  await run('docker', [
-    'run', '-d', '--name', tunnelBox(leaseId),
-    '--add-host=host.docker.internal:host-gateway',
-    'ekzhang/bore', 'local', String(hostPort),
-    '--local-host', 'host.docker.internal',
-    '--to', BORE_SERVER,
-  ]);
-  for (let i = 0; i < 30; i++) {
-    const { stdout, stderr } = await run('docker', ['logs', tunnelBox(leaseId)]);
-    const match = `${stdout}${stderr}`.match(/listening at \S+?:(\d+)/);
-    if (match) return { host: BORE_SERVER, port: Number(match[1]) };
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error('bore never reported a remote port');
-}
-
-async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
-  const name = box(cmd.leaseId);
-  // Hardened + mount-less: no host filesystem, no privilege escalation, capped CPU/RAM/PIDs.
-  await run('docker', [
-    'run', '-d', '--name', name,
-    '-p', '0:22',
-    '--cpus', String(CPUS),
-    '--memory', `${MEM_MB}m`,
-    '--pids-limit', '512',
-    '--security-opt', 'no-new-privileges',
-    '-e', `ROOT_PASSWORD=${cmd.password}`,
-    IMAGE,
-  ]);
-  const { stdout } = await run('docker', ['port', name, '22']);
-  const hostPort = Number(stdout.trim().split('\n')[0].split(':').pop());
-  const where = TUNNEL_MODE === 'bore' ? await boreTunnel(cmd.leaseId, hostPort) : { host: lanIp(), port: hostPort };
-  await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, ...where });
-  console.log(`lease ${cmd.leaseId} up: ssh root@${where.host} -p ${where.port}`);
-}
-
-async function stop(leaseId: string) {
-  for (const name of [box(leaseId), tunnelBox(leaseId)]) {
-    await run('docker', ['rm', '-f', name]).catch(() => {});
-  }
-  console.log(`lease ${leaseId} torn down`);
 }
 
 async function post(path: string, body: unknown) {
@@ -91,20 +46,106 @@ async function post(path: string, body: unknown) {
   return res.json() as Promise<any>;
 }
 
-console.log(`building ${IMAGE} …`);
-await run('docker', ['build', '-t', IMAGE, new URL('../sandbox', import.meta.url).pathname]);
+const sandboxCfg = {
+  image: IMAGE,
+  imageContext: new URL('../sandbox', import.meta.url).pathname,
+  tunnelMode: TUNNEL_MODE,
+  boreServer: BORE_SERVER,
+};
+
+await logCapabilities(sandboxCfg);
+
+// Fail loudly at startup if the configured backend can't deliver, rather than downgrading silently.
+const backend: SandboxBackend = await selectBackend(SANDBOX_BACKEND, sandboxCfg);
+
+// leaseId -> live handle, so stop() and the reaper have what they need to tear a sandbox down.
+const handles = new Map<string, SandboxHandle>();
+
+async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
+  // The daemon's EGRESS_MODE is the floor; the buyer's request can only narrow it, never widen it.
+  const egress: EgressPolicy = { ...cmd.egress, mode: EGRESS_MODE === 'open' ? cmd.egress.mode : EGRESS_MODE };
+  const handle = await backend.create({
+    leaseId: cmd.leaseId,
+    cpuCores: CPUS,
+    memMib: MEM_MB,
+    diskMib: 0,
+    sshPublicKey: cmd.sshPublicKey,
+    sshPassword: cmd.password,
+    ttlSeconds: cmd.ttlSeconds,
+    egress,
+  });
+  handles.set(cmd.leaseId, handle);
+  // Apply the per-lease firewall when the backend exposes a filterable iface (tap-based backends).
+  const iface = handle.internal.iface;
+  if (iface) {
+    await applyEgress(cmd.leaseId, iface, handle.internal.ownCidr ?? '0.0.0.0/32', egress).catch((e) => {
+      console.error(`egress rules failed for ${cmd.leaseId}:`, (e as Error).message);
+    });
+  } else if (egress.mode !== 'open') {
+    console.warn(`egress ${egress.mode} requested but ${backend.name} exposes no filterable iface — not enforced`);
+  }
+  await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, host: handle.sshHost, port: handle.sshPort });
+  console.log(`lease ${cmd.leaseId} up: ssh root@${handle.sshHost} -p ${handle.sshPort}`);
+}
+
+async function stop(leaseId: string) {
+  const handle = handles.get(leaseId) ?? { leaseId, backend: backend.name, sshHost: '', sshPort: 0, internal: {} };
+  if (handle.internal.iface) await removeEgress(leaseId, handle.internal.iface).catch(() => {});
+  await backend.destroy(handle);
+  handles.delete(leaseId);
+  console.log(`lease ${leaseId} torn down`);
+}
+
+// Kill switch: POST http://127.0.0.1:KILL_PORT/kill tears down every live sandbox and its rules now.
+http
+  .createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/kill') {
+      const ids = [...handles.keys()];
+      console.warn(`kill switch: tearing down ${ids.length} sandbox(es)`);
+      void Promise.all(ids.map((id) => stop(id).catch(() => {}))).then(() => {
+        res.writeHead(200).end(JSON.stringify({ killed: ids }));
+      });
+    } else {
+      res.writeHead(404).end();
+    }
+  })
+  .listen(KILL_PORT, '127.0.0.1');
 
 const { nodeId } = await post('/nodes/register', {
   label: LABEL,
   cpus: CPUS,
   memMb: MEM_MB,
   rateLamportsPerHour: RATE,
+  isolation: backend.tier,
+  isolationBackend: backend.name,
+  egressMode: EGRESS_MODE,
 });
-console.log(`registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour`);
+console.log(
+  `registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour ` +
+    `(${backend.tier} via ${backend.name}, egress ${EGRESS_MODE})`,
+);
+
+// Reap orphans left by a previous daemon run, then on a timer — leases are in-memory, so a sandbox
+// the registry forgot (restart, crash) would otherwise run forever.
+async function reapNow() {
+  try {
+    const gone = await reap(backend, new Set(handles.keys()));
+    if (gone.length) console.log(`reaped ${gone.length} orphan sandbox(es): ${gone.join(', ')}`);
+  } catch (e) {
+    console.error('reap failed:', (e as Error).message);
+  }
+}
+await reapNow();
+setInterval(reapNow, REAP_INTERVAL_MS);
 
 setInterval(async () => {
   try {
-    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, {});
+    // Report each live lease's egress-drop tally so the registry can suspend an abusive buyer.
+    const dropCounters: Record<string, number> = {};
+    for (const [leaseId, h] of handles) {
+      if (h.internal.iface) dropCounters[leaseId] = await readDropCounter(leaseId);
+    }
+    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, { dropCounters });
     for (const cmd of commands as NodeCommand[]) {
       if (cmd.type === 'start') {
         await start(nodeId, cmd).catch(async (e) => {

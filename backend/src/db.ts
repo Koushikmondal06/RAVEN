@@ -30,6 +30,7 @@ export async function initSchema() {
   // _id (address / txid / key) is already unique; index the query fields we actually filter/sort on.
   await charges.createIndex({ address: 1, createdAt: -1 });
   await payouts.createIndex({ leaseId: 1 });
+  await payouts.createIndex({ payto: 1, createdAt: -1 }); // contributor earnings roll-up
   await nonces.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Mongo sweeps expired nonces
   await contributors.createIndex({ address: 1 }); // find an address's existing key, avoid duplicates
 }
@@ -58,18 +59,29 @@ export async function setUserRole(address: string, role: Role): Promise<void> {
 
 // ---------- contributor keys ----------
 
-/** One key per verified address: returns the existing key or mints a fresh one. */
-export async function upsertContributorKey(address: string, payoutAddress: string, mintKey: () => string): Promise<string> {
-  const existing = await contributors.findOne({ address });
-  if (existing) {
-    if (existing.payoutAddress !== payoutAddress) {
-      await contributors.updateOne({ _id: existing._id }, { $set: { payoutAddress } });
-    }
-    return existing._id;
-  }
-  const key = mintKey();
-  await contributors.insertOne({ _id: key, address, payoutAddress, createdAt: new Date() });
-  return key;
+/** Hard cap on live keys per wallet — two, so a key can be rotated without downtime. */
+export const MAX_CONTRIBUTOR_KEYS = 2;
+
+export type ContributorKey = { key: string; createdAt: Date };
+
+export async function listContributorKeys(address: string): Promise<ContributorKey[]> {
+  const docs = await contributors.find({ address }).sort({ createdAt: 1 }).toArray();
+  return docs.map((d) => ({ key: d._id, createdAt: d.createdAt }));
+}
+
+/** Mints a key for this wallet, or returns null when it already holds MAX_CONTRIBUTOR_KEYS. */
+export async function createContributorKey(address: string, mintKey: () => string): Promise<ContributorKey | null> {
+  // ponytail: count-then-insert races two concurrent requests to a 3rd key; add a per-address lock or
+  // a unique {address, slot} index if that ever matters.
+  if ((await contributors.countDocuments({ address })) >= MAX_CONTRIBUTOR_KEYS) return null;
+  const doc = { _id: mintKey(), address, payoutAddress: address, createdAt: new Date() };
+  await contributors.insertOne(doc);
+  return { key: doc._id, createdAt: doc.createdAt };
+}
+
+export async function deleteContributorKey(address: string, key: string): Promise<boolean> {
+  const res = await contributors.deleteOne({ _id: key, address });
+  return res.deletedCount === 1;
 }
 
 /** Resolves a contributor bearer key to its payout address, or null if unknown. */
@@ -114,6 +126,47 @@ export async function charge(
     { $set: { balance: { $max: [{ $subtract: [{ $ifNull: ['$balance', 0n] }, lamports] }, 0n] } } },
   ]);
   await charges.insertOne({ address, leaseId, nodeId, seconds: Math.round(seconds), lamports, createdAt: new Date() });
+}
+
+// ---------- dashboard roll-ups ----------
+
+/** What this wallet has rented: finished leases only (live ones are still in the registry's memory). */
+export async function buyerTotals(address: string): Promise<{ leases: number; seconds: number; lamports: bigint }> {
+  const [row] = await charges
+    .aggregate<{ leases: number; seconds: number; lamports: bigint }>([
+      { $match: { address } },
+      { $group: { _id: null, leases: { $sum: 1 }, seconds: { $sum: '$seconds' }, lamports: { $sum: '$lamports' } } },
+    ])
+    .toArray();
+  return { leases: row?.leases ?? 0, seconds: row?.seconds ?? 0, lamports: BigInt(row?.lamports ?? 0) };
+}
+
+/** What this wallet earned hosting: one payout row per lease it served. `unpaid` = txid null (owed).
+ *  Seconds come from the matching charge row, so "given" time is the same number the buyer was billed. */
+export async function contributorTotals(
+  address: string,
+): Promise<{ leases: number; seconds: number; lamports: bigint; unpaidLamports: bigint }> {
+  const [row] = await payouts
+    .aggregate<{ leases: number; seconds: number; lamports: bigint; unpaid: bigint }>([
+      { $match: { payto: address } },
+      { $lookup: { from: 'charges', localField: 'leaseId', foreignField: 'leaseId', as: 'charge' } },
+      {
+        $group: {
+          _id: null,
+          leases: { $sum: 1 },
+          seconds: { $sum: { $sum: '$charge.seconds' } },
+          lamports: { $sum: '$lamports' },
+          unpaid: { $sum: { $cond: [{ $eq: ['$txid', null] }, '$lamports', 0] } },
+        },
+      },
+    ])
+    .toArray();
+  return {
+    leases: row?.leases ?? 0,
+    seconds: row?.seconds ?? 0,
+    lamports: BigInt(row?.lamports ?? 0),
+    unpaidLamports: BigInt(row?.unpaid ?? 0),
+  };
 }
 
 /** txid null means "owed but not settled on-chain" (no PLATFORM_PRIVATE_KEY, or the transfer failed). */

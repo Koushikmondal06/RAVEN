@@ -3,7 +3,8 @@ import '../../shared/env.js';
 import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
-import type { LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
+import type { EgressPolicy, IsolationTier, LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
+import { TIER_RANK, isSshPublicKey, satisfiesTier } from '../../shared/types.js';
 import {
   NONCE_TTL_MS,
   contributorPayout,
@@ -18,21 +19,30 @@ import {
 } from './auth.js';
 import { billable, cost, secondsRemaining } from './billing.js';
 import {
+  MAX_CONTRIBUTOR_KEYS,
+  buyerTotals,
   charge,
+  contributorTotals,
+  createContributorKey,
   credit,
+  deleteContributorKey,
   getBalance,
   initSchema,
+  listContributorKeys,
   putNonce,
   recordPayout,
   setUserRole,
   takeNonce,
-  upsertContributorKey,
 } from './db.js';
 import { PLATFORM_PAYTO, confirmDeposit, payoutSol } from './solana.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
 const METER_INTERVAL_MS = Number(process.env.METER_INTERVAL_MS ?? 10_000);
 const OFFLINE_AFTER_MS = 20_000;
+// Off by default: SSH is key-only. The wallet-address password is guessable from any explorer.
+const ALLOW_PASSWORD_SSH = process.env.ALLOW_PASSWORD_SSH === 'true';
+const MAX_LEASE_TTL_S = Number(process.env.MAX_LEASE_TTL_S ?? 86_400); // guest self-destruct cap
+const EGRESS_DROP_LIMIT = Number(process.env.EGRESS_DROP_LIMIT ?? 100_000); // per-lease dropped packets before suspend
 
 type Node = {
   id: string;
@@ -41,6 +51,9 @@ type Node = {
   cpus: number;
   memMb: number;
   rate: bigint;
+  isolation: IsolationTier;
+  isolationBackend: string;
+  egressMode: EgressPolicy['mode'];
   lastSeen: number;
   leaseId?: string;
 };
@@ -49,7 +62,8 @@ type Lease = {
   id: string;
   nodeId: string;
   address: string;
-  password: string;
+  sshPublicKey?: string; // default auth
+  password?: string; // legacy, only when ALLOW_PASSWORD_SSH
   rate: bigint;
   status: 'starting' | 'active' | 'ended';
   host?: string;
@@ -65,6 +79,7 @@ type Lease = {
 const nodes = new Map<string, Node>();
 const leases = new Map<string, Lease>();
 const queued = new Map<string, NodeCommand[]>(); // nodeId -> pending commands
+const suspended = new Set<string>(); // buyer addresses blocked for egress abuse
 
 const online = (n: Node) => Date.now() - n.lastSeen < OFFLINE_AFTER_MS;
 const push = (nodeId: string, cmd: NodeCommand) => queued.set(nodeId, [...(queued.get(nodeId) ?? []), cmd]);
@@ -77,6 +92,9 @@ function toNodeInfo(n: Node): NodeInfo {
     memMb: n.memMb,
     rateLamportsPerHour: n.rate.toString(),
     busy: Boolean(n.leaseId),
+    isolation: n.isolation,
+    isolationBackend: n.isolationBackend,
+    egressMode: n.egressMode,
   };
 }
 
@@ -91,7 +109,8 @@ async function toLeaseInfo(l: Lease): Promise<LeaseInfo> {
   };
   if (l.status === 'active' && l.host) {
     info.ssh = `ssh root@${l.host} -p ${l.port}`;
-    info.password = l.password;
+    if (l.password) info.password = l.password; // undefined in key mode
+
     const spent = cost(l.rate, (Date.now() - (l.startedAt ?? Date.now())) / 1000);
     const left = (await getBalance(l.address)) - spent;
     info.secondsRemaining = Math.max(0, secondsRemaining(l.rate, left > 0n ? left : 0n));
@@ -132,6 +151,15 @@ async function endLease(lease: Lease, reason: string) {
 }
 
 const app = express();
+// One line per request. Without it a misconfigured web bundle looks identical to a working one from
+// the server side: the browser never calls, and the log stays silent with no way to tell which.
+app.use((req, res, next) => {
+  // Heartbeats are every few seconds per node — logging them would bury everything else.
+  if (!req.path.endsWith('/heartbeat')) {
+    res.on('finish', () => console.log(`${req.method} ${req.originalUrl} ${res.statusCode} (${req.headers.origin ?? '-'})`));
+  }
+  next();
+});
 app.use(cors());
 app.use(express.json());
 
@@ -160,21 +188,30 @@ app.post('/auth/verify', asyncRoute(async (req, res) => {
   if (!verifySignIn(address, nonce, signature)) return res.status(401).json({ error: 'bad signature' });
 
   await setUserRole(address, role);
-  const token = signSession(address, role);
-
-  if (role === 'contributor') {
-    // Payout address IS the verified wallet — earnings go back to the address that signed in.
-    const contributorKey = await upsertContributorKey(address, address, newContributorKey);
-    return res.json({ token, address, role, contributorKey });
-  }
-  res.json({ token, address, role });
+  // One session covers both dashboards: the same wallet is a buyer when it rents and a contributor
+  // when it hosts, so `role` only records which door they came in — it gates nothing.
+  res.json({ token: signSession(address, role), address, role });
 }));
 
-// ---------- wallet (buyer) ----------
+// ---------- wallet + buyer dashboard ----------
 
+/** Balance plus the buyer roll-up the dashboard shows. Live leases are counted from memory, so the
+ *  totals include time that has not been charged yet. */
 app.get('/wallet', requireSession, asyncRoute(async (req, res) => {
   const address = sessionAddress(req);
-  res.json({ address, balanceLamports: (await getBalance(address)).toString(), payTo: PLATFORM_PAYTO });
+  const totals = await buyerTotals(address);
+  const live = [...leases.values()].filter((l) => l.address === address && l.status !== 'ended');
+  const liveSeconds = live.reduce((t, l) => t + (l.startedAt ? (Date.now() - l.startedAt) / 1000 : 0), 0);
+  res.json({
+    address,
+    balanceLamports: (await getBalance(address)).toString(),
+    payTo: PLATFORM_PAYTO,
+    leaseCount: totals.leases + live.length,
+    activeLeases: live.length,
+    totalLeaseSeconds: Math.round(totals.seconds + liveSeconds),
+    totalSpentLamports: totals.lamports.toString(),
+    suspended: suspended.has(address),
+  });
 }));
 
 app.post('/wallet/topup', requireSession, asyncRoute(async (req, res) => {
@@ -186,10 +223,57 @@ app.post('/wallet/topup', requireSession, asyncRoute(async (req, res) => {
   res.json({ creditedLamports: amount.toString(), balanceLamports: balance.toString() });
 }));
 
+// ---------- contributor dashboard (wallet session, not the daemon's RAVEN_KEY) ----------
+
+/** Earnings roll-up, the wallet's keys, and its nodes as the registry currently sees them. */
+app.get('/contributor/summary', requireSession, asyncRoute(async (req, res) => {
+  const address = sessionAddress(req);
+  const totals = await contributorTotals(address);
+  const mine = [...nodes.values()].filter((n) => n.payout === address);
+  const liveSeconds = mine.reduce((t, n) => {
+    const lease = n.leaseId ? leases.get(n.leaseId) : undefined;
+    return t + (lease?.status === 'active' && lease.startedAt ? (Date.now() - lease.startedAt) / 1000 : 0);
+  }, 0);
+  res.json({
+    address,
+    balanceLamports: (await getBalance(address)).toString(),
+    earnedLamports: totals.lamports.toString(),
+    unpaidLamports: totals.unpaidLamports.toString(), // owed but not yet settled on-chain
+    leasesGiven: totals.leases + mine.filter((n) => n.leaseId).length,
+    activeLeases: mine.filter((n) => n.leaseId).length,
+    totalGivenSeconds: Math.round(totals.seconds + liveSeconds),
+    maxKeys: MAX_CONTRIBUTOR_KEYS,
+    keys: await listContributorKeys(address),
+    nodes: mine.map((n) => ({ ...toNodeInfo(n), online: online(n) })),
+  });
+}));
+
+/** Mints a key, up to MAX_CONTRIBUTOR_KEYS. The payout address is always the signed-in wallet. */
+app.post('/contributor/keys', requireSession, asyncRoute(async (req, res) => {
+  const created = await createContributorKey(sessionAddress(req), newContributorKey);
+  if (!created) return res.status(409).json({ error: `at most ${MAX_CONTRIBUTOR_KEYS} keys per wallet` });
+  res.json(created);
+}));
+
+/** Revoking a key kills the daemons using it — their next heartbeat 401s. Frees a key slot. */
+app.delete('/contributor/keys/:key', requireSession, asyncRoute(async (req, res) => {
+  const ok = await deleteContributorKey(sessionAddress(req), String(req.params.key));
+  if (!ok) return res.status(404).json({ error: 'no such key' });
+  res.json({ ok: true });
+}));
+
 // ---------- nodes (contributor daemon: authenticates with RAVEN_KEY, never a wallet) ----------
 
+const TIERS: IsolationTier[] = ['container', 'usermode-kernel', 'microvm'];
+
+// The floor for every lease, enforced server-side. gVisor needs no KVM, so any ordinary Linux VM can
+// clear it; 'container' (shared host kernel) never can. Raise to 'microvm' to require real VMs.
+// A typo in the env var must not silently drop the floor, so an unknown value falls back.
+const envFloor = process.env.MARKET_MIN_ISOLATION as IsolationTier | undefined;
+const MARKET_MIN_ISOLATION: IsolationTier = envFloor && TIERS.includes(envFloor) ? envFloor : 'usermode-kernel';
+
 app.post('/nodes/register', requireContributorKey, (req, res) => {
-  const { label, cpus, memMb, rateLamportsPerHour } = req.body ?? {};
+  const { label, cpus, memMb, rateLamportsPerHour, isolation, isolationBackend, egressMode } = req.body ?? {};
   if (!rateLamportsPerHour) return res.status(400).json({ error: 'rate required' });
   const node: Node = {
     id: randomUUID(),
@@ -198,10 +282,16 @@ app.post('/nodes/register', requireContributorKey, (req, res) => {
     cpus: Number(cpus ?? 1),
     memMb: Number(memMb ?? 1024),
     rate: BigInt(rateLamportsPerHour),
+    // Default to the weakest tier when a pre-tier daemon registers, so old daemons keep working.
+    isolation: TIERS.includes(isolation) ? isolation : 'container',
+    isolationBackend: typeof isolationBackend === 'string' ? isolationBackend : 'docker',
+    egressMode: egressMode === 'deny-all' || egressMode === 'allowlist' ? egressMode : 'open',
     lastSeen: Date.now(),
   };
   nodes.set(node.id, node);
-  console.log(`node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB)`);
+  console.log(
+    `node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB, ${node.isolation} via ${node.isolationBackend})`,
+  );
   res.json({ nodeId: node.id });
 });
 
@@ -215,6 +305,17 @@ app.post('/nodes/:id/heartbeat', requireContributorKey, (req, res) => {
   const node = ownedNode(req);
   if (!node) return res.status(404).json({ error: 'unknown node' });
   node.lastSeen = Date.now();
+  // The daemon reports per-lease egress drop counters; a lease slamming the firewall gets suspended
+  // (its buyer address blocked from new rentals) and torn down.
+  const dropCounters = (req.body?.dropCounters ?? {}) as Record<string, number>;
+  for (const [leaseId, drops] of Object.entries(dropCounters)) {
+    const lease = leases.get(leaseId);
+    if (lease && lease.status === 'active' && drops > EGRESS_DROP_LIMIT) {
+      console.warn(`lease ${leaseId} dropped ${drops} egress packets — suspending buyer ${lease.address}`);
+      suspended.add(lease.address);
+      void endLease(lease, 'egress abuse');
+    }
+  }
   const commands = queued.get(node.id) ?? [];
   queued.delete(node.id);
   res.json({ commands });
@@ -251,7 +352,35 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   if (!node || !online(node)) return res.status(404).json({ error: 'node not available' });
   if (node.leaseId) return res.status(409).json({ error: 'node is busy' });
 
+  // Never place a lease on a node weaker than the buyer's minimum — and say which tiers exist.
+  // Reject an unknown tier outright: TIER_RANK[garbage] is undefined, so satisfiesTier would say
+  // "below minimum" for every node and the buyer would see a confusing 409 instead of a bad request.
+  const requested = req.body?.minIsolation as IsolationTier | undefined;
+  if (requested && !TIERS.includes(requested)) {
+    return res.status(400).json({ error: `unknown minIsolation ${requested}`, tiers: TIERS });
+  }
+  // A buyer may raise the floor but never lower it: MARKET_MIN_ISOLATION applies even when the
+  // request omits minIsolation, so a shared-kernel 'container' node is unrentable through the API
+  // and not merely hidden by the web UI's own gate.
+  const minIsolation = requested && TIER_RANK[requested] > TIER_RANK[MARKET_MIN_ISOLATION] ? requested : MARKET_MIN_ISOLATION;
+  if (!satisfiesTier(node.isolation, minIsolation)) {
+    const availableTiers = [
+      ...new Set([...nodes.values()].filter((n) => online(n) && !n.leaseId).map((n) => n.isolation)),
+    ];
+    return res.status(409).json({ error: `node isolation ${node.isolation} is below requested ${minIsolation}`, availableTiers });
+  }
+
+  // SSH is key-only unless ALLOW_PASSWORD_SSH; a bad or missing key is rejected up front.
+  const sshPublicKey = req.body?.sshPublicKey;
+  if (sshPublicKey !== undefined && !isSshPublicKey(sshPublicKey)) {
+    return res.status(400).json({ error: 'sshPublicKey is not a valid OpenSSH public key' });
+  }
+  if (!sshPublicKey && !ALLOW_PASSWORD_SSH) {
+    return res.status(400).json({ error: 'sshPublicKey required (password SSH is disabled)' });
+  }
+
   const address = sessionAddress(req);
+  if (suspended.has(address)) return res.status(403).json({ error: 'account suspended for egress abuse' });
   const balance = await getBalance(address);
   if (balance < cost(node.rate, 60)) return res.status(402).json({ error: 'top up first: under one minute of balance' });
 
@@ -259,13 +388,31 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
     id: randomUUID(),
     nodeId: node.id,
     address,
-    password: address, // per-lease password on a throwaway root container
+    sshPublicKey: sshPublicKey || undefined,
+    // legacy password (the wallet address) only when explicitly allowed
+    password: !sshPublicKey && ALLOW_PASSWORD_SSH ? address : undefined,
     rate: node.rate,
     status: 'starting',
   };
   leases.set(lease.id, lease);
   node.leaseId = lease.id;
-  push(node.id, { type: 'start', leaseId: lease.id, password: lease.password });
+  // Guest hard-TTL backstop: self-destruct at the current balance runway even if the registry dies.
+  const ttlSeconds = Math.min(MAX_LEASE_TTL_S, Math.max(60, Math.floor(secondsRemaining(node.rate, balance))));
+  // The node's advertised mode is the floor; a buyer may narrow it (allowlist CIDRs/ports) but the
+  // daemon still applies its own EGRESS_MODE, so this can only be as open as the node permits.
+  const egress: EgressPolicy = {
+    mode: node.egressMode,
+    allowCidrs: Array.isArray(req.body?.allowCidrs) ? req.body.allowCidrs.map(String) : undefined,
+    allowPorts: Array.isArray(req.body?.allowPorts) ? req.body.allowPorts.map(Number) : undefined,
+  };
+  push(node.id, {
+    type: 'start',
+    leaseId: lease.id,
+    sshPublicKey: lease.sshPublicKey,
+    password: lease.password,
+    ttlSeconds,
+    egress,
+  });
   res.json(await toLeaseInfo(lease));
 }));
 
@@ -299,6 +446,10 @@ setInterval(() => {
     })();
   }
 }, METER_INTERVAL_MS);
+
+if (ALLOW_PASSWORD_SSH) {
+  console.warn('WARNING: ALLOW_PASSWORD_SSH=true — leases fall back to a wallet-address password, guessable from any explorer. Prefer SSH keys.');
+}
 
 await initSchema();
 app.listen(PORT, () => console.log(`RAVEN registry on :${PORT} (payments -> ${PLATFORM_PAYTO || 'UNSET'})`));

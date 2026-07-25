@@ -1,16 +1,18 @@
 services:
+  # No `contributor` service on purpose. The daemon delivers the microVM tier with Firecracker, which
+  # needs /dev/kvm, root-level tap networking, and host binaries this repo's image doesn't carry —
+  # making it work in a container would take --privileged plus the Docker socket, i.e. full host root,
+  # which is exactly what the isolation is supposed to prevent. Contributors run it natively:
+  #   sudo bash contributor/scripts/setup-firecracker.sh && sudo -E npm run contributor
+  # See contributor/README.md.
+  #
+  # compose validates EVERY service's env_file at load, even ones you don't start. On Compose v2 you
+  # could mark these `required: false`; on v1 they must exist, so create both once:
+  #   for d in backend example-buyer; do cp $d/.env.example $d/.env; done
   backend:
     build: { context: ., dockerfile: backend/Dockerfile }
     env_file: backend/.env
     ports: ['4000:4000']
-
-  contributor:
-    build: { context: ., dockerfile: contributor/Dockerfile }
-    env_file: contributor/.env # needs RAVEN_KEY (from the /contributor page) + REGISTRY_URL
-    # Sandboxes run as sibling containers on the host daemon — nothing extra to install.
-    volumes: ['/var/run/docker.sock:/var/run/docker.sock']
-    # Only needed for TUNNEL_MODE=local (and broken on Docker Desktop — run natively there instead).
-    # network_mode: host
 
   web:
     build:
@@ -19,10 +21,16 @@ services:
       # NEXT_PUBLIC_* are baked in at build time. These interpolate from the shell / --env-file, so
       # for a custom build: docker compose --env-file web/.env build web
       args:
-        NEXT_PUBLIC_REGISTRY_URL: ${NEXT_PUBLIC_REGISTRY_URL:-http://localhost:4000}
+        # Default to the same-origin /api path that this image's nginx proxies to the backend service.
+        # An absolute http:// URL here is what breaks a deployment behind https: the bundle is static,
+        # so `localhost:4000` means the visitor's own machine and any plain-http URL is blocked as
+        # mixed content. Only override this when the registry is on its own https host.
+        NEXT_PUBLIC_REGISTRY_URL: ${NEXT_PUBLIC_REGISTRY_URL:-/api}
         NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
         NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
         MAINNET: ${MAINNET:-false}
+    # No depends_on: the backend often lives on another host, and nginx resolves `backend` per request
+    # (see web/nginx.conf) so this image starts either way.
     ports: ['3000:80']
 
   buyer:

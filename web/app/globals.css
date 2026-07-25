@@ -14,5 +14,18 @@ td, th { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #1b1
 th { color: #8b949e; font-size: 0.75rem; text-transform: uppercase; }
 code { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 0.5rem; display: block; overflow-x: auto; }
 .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+
+/* Segmented rent/contribute switch — the highlight slides because only the padding-box moves. */
+.switch { display: inline-flex; background: #0d1117; border: 1px solid #30363d; border-radius: 999px; padding: 3px; }
+.switch button { background: transparent; color: #8b949e; border-radius: 999px; padding: 0.4rem 1rem; transition: background 0.18s ease, color 0.18s ease; }
+.switch button.on { background: #1f6feb; color: #fff; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.5rem; }
+.stat { background: #0d1117; border: 1px solid #1b1f24; border-radius: 8px; padding: 0.7rem 0.8rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.stat .label { color: #8b949e; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; }
+.stat strong { font-size: 1.15rem; }
+.stat .hint { color: #8b949e; font-size: 0.7rem; }
+.mono { word-break: break-all; }
 .err { color: #f85149; }
 .ok { color: #3fb950; }

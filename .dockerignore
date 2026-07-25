@@ -1,0 +1,12 @@
+# Keep the build context tiny — the daemon copies everything not listed here on every build.
+# node_modules is 400M+; the Dockerfiles run `npm install` themselves, so never ship it.
+**/node_modules
+**/.next
+**/out
+**/dist
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+graphify-out
