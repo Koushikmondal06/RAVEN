@@ -17,7 +17,7 @@ import { useWalletAccountTransactionSendingSigner } from '@solana/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import type { IsolationTier, LeaseInfo, NodeInfo } from '../../shared/types';
-import { TIER_RANK, satisfiesTier } from '../../shared/types';
+import { satisfiesTier } from '../../shared/types';
 import { type Auth, AuthPanel } from '../lib/AuthPanel';
 import { CHAIN, LAMPORTS_PER_SOL, RPC_URL, api, clock, sol } from '../lib/api';
 
@@ -114,10 +114,13 @@ const TIER_LABEL: Record<IsolationTier, string> = {
   microvm: 'microVM',
 };
 
+// microVM-only marketplace: every lease is placed on a hardware-virtualized (KVM) node. Weaker
+// tiers (container/gVisor) are shown but never rentable here.
+const MIN_ISOLATION: IsolationTier = 'microvm';
+
 function Explore() {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
   const [lease, setLease] = useState<LeaseInfo | null>(null);
-  const [minIsolation, setMinIsolation] = useState<IsolationTier | ''>('');
   const [sshPublicKey, setSshPublicKey] = useState('');
   const [error, setError] = useState('');
 
@@ -127,16 +130,6 @@ function Explore() {
     const id = setInterval(tick, 4000);
     return () => clearInterval(id);
   }, []);
-
-  // Default the minimum to the strongest tier that actually has a live node.
-  useEffect(() => {
-    if (minIsolation !== '' || nodes.length === 0) return;
-    const strongest = nodes.reduce<IsolationTier>(
-      (best, n) => (TIER_RANK[n.isolation] > TIER_RANK[best] ? n.isolation : best),
-      'container',
-    );
-    setMinIsolation(strongest);
-  }, [nodes, minIsolation]);
 
   useEffect(() => {
     if (!lease || lease.status === 'ended') return;
@@ -149,7 +142,7 @@ function Explore() {
     try {
       setLease(
         await api<LeaseInfo>('/leases', {
-          body: { nodeId, minIsolation: minIsolation || undefined, sshPublicKey: sshPublicKey.trim() },
+          body: { nodeId, minIsolation: MIN_ISOLATION, sshPublicKey: sshPublicKey.trim() },
         }),
       );
     } catch (e) {
@@ -159,22 +152,15 @@ function Explore() {
 
   const keyOk = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+) /.test(sshPublicKey.trim());
 
-  const meetsMin = (n: NodeInfo) => !minIsolation || satisfiesTier(n.isolation, minIsolation);
+  const meetsMin = (n: NodeInfo) => satisfiesTier(n.isolation, MIN_ISOLATION);
 
   return (
     <>
       <section>
         <h2>Explore</h2>
-        <div className="row" style={{ marginBottom: '0.75rem' }}>
-          <label>
-            Minimum isolation:{' '}
-            <select value={minIsolation} onChange={(e) => setMinIsolation(e.target.value as IsolationTier)}>
-              <option value="container">container</option>
-              <option value="usermode-kernel">gVisor (usermode-kernel)</option>
-              <option value="microvm">microVM</option>
-            </select>
-          </label>
-        </div>
+        <p className="sub" style={{ marginBottom: '0.75rem' }}>
+          Minimum isolation: <strong>microVM only</strong> — leases run in a hardware-virtualized guest.
+        </p>
         <div style={{ marginBottom: '0.75rem' }}>
           <input
             style={{ width: '100%' }}
