@@ -13,8 +13,8 @@ const REGISTRY_URL = process.env.REGISTRY_URL ?? 'http://localhost:4000';
 const RAVEN_KEY = process.env.RAVEN_KEY ?? '';
 const RATE = process.env.RATE_LAMPORTS_PER_HOUR ?? '50000000'; // 0.05 SOL/hour
 const TUNNEL_MODE = process.env.TUNNEL_MODE ?? 'bore'; // bore | local
-// Fallback only. The registry normally pushes its own relay at register time (see register()), so a
-// contributor doesn't configure tunnelling at all — and buyer traffic stays off the public bore.pub.
+// Public bore.pub by default: no relay to run, no ports to open. A registry that operates its own
+// relay overrides this at register time (see register()).
 const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
 const BORE_SECRET = process.env.BORE_SECRET;
 const LABEL = process.env.NODE_LABEL ?? os.hostname();
@@ -131,10 +131,7 @@ console.log(
     `(tunnel via ${sandboxCfg.boreServer}${sandboxCfg.boreSecret ? ', authenticated' : ''})`,
 );
 if (TUNNEL_MODE === 'bore' && sandboxCfg.boreServer === 'bore.pub') {
-  console.warn(
-    'WARNING: publishing lease SSH ports through the PUBLIC bore.pub relay — every buyer session ' +
-      'transits a third party. The registry should set BORE_SERVER (and BORE_SECRET) to its own relay.',
-  );
+  console.log('tunnelling through public bore.pub — set BORE_SERVER on the registry to use your own relay');
 }
 
 // Reap orphans left by a previous daemon run, then on a timer — leases are in-memory, so a sandbox

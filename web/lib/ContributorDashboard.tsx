@@ -8,6 +8,11 @@ import { CopyButton, Stats } from './Dashboard';
 
 const IMAGE = process.env.NEXT_PUBLIC_CONTRIBUTOR_IMAGE ?? 'ghcr.io/himanshum685/raven-contributor:sha-e51f5c3';
 const RAW_REGISTRY = process.env.NEXT_PUBLIC_REGISTRY_URL || 'http://localhost:4000';
+// Optional explicit relay for the copy-paste command. The registry also pushes this at register time
+// (and that wins), but an older daemon image ignores the push — this line makes it work anyway.
+// Only the hostname goes here: BORE_SECRET must never be baked into a public bundle, so a
+// secret-gated relay needs a daemon new enough to take it from the register response.
+const BORE_SERVER = process.env.NEXT_PUBLIC_BORE_SERVER ?? '';
 
 /** `/api` is the same-origin proxy path — meaningless to a daemon on someone else's box, so expand it
  *  to this page's own origin. Called in render, not at module load, so it reads the real location. */
@@ -178,7 +183,7 @@ function RunDaemon({ apiKey }: { apiKey: string }) {
 
 docker run -d --name raven-contributor --restart unless-stopped \\
   -e RAVEN_KEY=${apiKey} \\
-  -e REGISTRY_URL=${registry} \\
+  -e REGISTRY_URL=${registry} \\${BORE_SERVER ? `\n  -e BORE_SERVER=${BORE_SERVER} \\` : ''}
   -v /var/run/docker.sock:/var/run/docker.sock \\
   ${IMAGE}`;
 
