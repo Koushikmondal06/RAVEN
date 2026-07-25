@@ -1,8 +1,15 @@
 // NEXT_PUBLIC_* are inlined at build time — the only env visible in a static export.
 const BASE = process.env.NEXT_PUBLIC_REGISTRY_URL ?? 'http://localhost:4000';
 
-export const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
-export const CHAIN = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? 'devnet') as 'devnet' | 'mainnet' | 'testnet';
+// MAINNET=true (root .env) → mainnet-beta, else devnet. Explicit NEXT_PUBLIC_SOLANA_* still win.
+const MAINNET = process.env.NEXT_PUBLIC_MAINNET === 'true';
+export const CHAIN = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? (MAINNET ? 'mainnet' : 'devnet')) as
+  | 'devnet'
+  | 'mainnet'
+  | 'testnet';
+export const RPC_URL =
+  process.env.NEXT_PUBLIC_SOLANA_RPC_URL ??
+  (MAINNET ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com');
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 export type Role = 'buyer' | 'contributor';

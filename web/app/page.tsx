@@ -1,14 +1,26 @@
 'use client';
 
-import { useSignAndSendTransaction } from '@privy-io/react-auth/solana';
-import { getBase58Decoder } from '@solana/kit';
+import { getTransferSolInstruction } from '@solana-program/system';
+import {
+  address,
+  appendTransactionMessageInstruction,
+  createSolanaRpc,
+  createTransactionMessage,
+  getBase58Decoder,
+  lamports,
+  pipe,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signAndSendTransactionMessageWithSigners,
+} from '@solana/kit';
+import { useWalletAccountTransactionSendingSigner } from '@solana/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import type { LeaseInfo, NodeInfo } from '../../shared/types';
 import { type Auth, AuthPanel } from '../lib/AuthPanel';
-import { CHAIN, LAMPORTS_PER_SOL, api, clock, sol } from '../lib/api';
-import { buildTopUpTx } from '../lib/topup';
+import { CHAIN, LAMPORTS_PER_SOL, RPC_URL, api, clock, sol } from '../lib/api';
 
+const rpc = createSolanaRpc(RPC_URL);
 const chain = `solana:${CHAIN}` as const;
 
 export default function BuyerPage() {
@@ -27,7 +39,7 @@ export default function BuyerPage() {
 }
 
 function BuyerDashboard({ auth }: { auth: Auth }) {
-  const { signAndSendTransaction } = useSignAndSendTransaction();
+  const signer = useWalletAccountTransactionSendingSigner(auth.account, chain);
   const [balance, setBalance] = useState('0');
   const [payTo, setPayTo] = useState('');
   const [amount, setAmount] = useState('0.1');
@@ -45,15 +57,26 @@ function BuyerDashboard({ auth }: { auth: Auth }) {
   }, [refresh]);
 
   const topUp = async () => {
-    if (!auth.wallet) return;
     setError('');
     setBusy('Confirming deposit…');
     try {
-      const lamports = BigInt(Math.round(Number(amount) * Number(LAMPORTS_PER_SOL)));
-      const transaction = await buildTopUpTx(auth.wallet.address, payTo, lamports);
-      // Buyer signs the real transfer in-browser via Privy — we only get the resulting signature.
-      const { signature } = await signAndSendTransaction({ transaction, wallet: auth.wallet, chain });
-      const txid = getBase58Decoder().decode(signature);
+      const { value: blockhash } = await rpc.getLatestBlockhash().send();
+      const message = pipe(
+        createTransactionMessage({ version: 0 }),
+        (m) => setTransactionMessageFeePayerSigner(signer, m),
+        (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
+        (m) =>
+          appendTransactionMessageInstruction(
+            getTransferSolInstruction({
+              source: signer,
+              destination: address(payTo),
+              amount: lamports(BigInt(Math.round(Number(amount) * Number(LAMPORTS_PER_SOL)))),
+            }),
+            m,
+          ),
+      );
+      // The wallet signs and sends the real transfer; we only get the resulting signature back.
+      const txid = getBase58Decoder().decode(await signAndSendTransactionMessageWithSigners(message));
       const res = await api<{ balanceLamports: string }>('/wallet/topup', { body: { signature: txid } });
       setBalance(res.balanceLamports);
     } catch (e) {

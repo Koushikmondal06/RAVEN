@@ -11,14 +11,14 @@ used. Solana devnet, custodial balances, no on-chain program required.
 ```mermaid
 flowchart LR
     subgraph buyers [Buyers]
-        web["web/ · Next.js static SPA<br/>Privy wallet + @solana/kit"]
+        web["web/ · Next.js static SPA<br/>wallet-standard + @solana/kit"]
         agent["example-buyer/ · headless agent<br/>(own key; same REST API + ssh2)"]
     end
 
     registry["backend/ · registry (Express :4000)<br/>nodes · leases — in memory · JWT sessions<br/>watchdog + billing"]
 
     subgraph contribs [Contributors]
-        onboarding["Become a Contributor page<br/>Privy sign-in → RAVEN_KEY"]
+        onboarding["Become a Contributor page<br/>wallet sign-in → RAVEN_KEY"]
         contributor["contributor/ · daemon<br/>RAVEN_KEY bearer · docker · bore tunnel"]
         sandbox["sandbox · throwaway root container<br/>capped CPU/RAM, no mounts, per-lease SSH pw"]
     end
@@ -26,8 +26,8 @@ flowchart LR
     mongo[("MongoDB<br/>users · deposits · charges · payouts<br/>nonces · contributors")]
     solana["Solana devnet<br/>top-up confirm · contributor payout"]
 
-    web -- "Privy sign-in, top-up, rent, release" --> registry
-    onboarding -- "Privy sign-in (role=contributor)" --> registry
+    web -- "wallet sign-in, top-up, rent, release" --> registry
+    onboarding -- "wallet sign-in (role=contributor)" --> registry
     agent -- "REST + ssh into the sandbox" --> registry
     registry -- "money state, nonces, keys" --> mongo
     registry -- "confirm deposit · send payout" --> solana
@@ -47,19 +47,19 @@ flowchart LR
 |---|---|
 | `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, lease lifecycle + billing watchdog. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
 | `contributor/` | Runs on each shared machine. Authenticates with a `RAVEN_KEY` bearer only — no wallet, no keypair — and on command launches a sandbox as a sibling container on the host Docker daemon, over a bore tunnel. |
-| `web/` | Next.js App Router static SPA. Both roles authenticate through Privy (Solana): a Buyer dashboard (`/`) and a "Become a Contributor" page (`/contributor`). |
+| `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack): a Buyer dashboard (`/`) and a "Become a Contributor" page (`/contributor`). |
 | `example-buyer/` | The buyer flow with no human: an agent that holds its own key, signs in, tops up, rents the cheapest node, SSHes in to run a job, then releases. |
 
 **Auth (both roles, same flow)**
-1. Connect Wallet via Privy (Phantom / Solflare / embedded / social — Solana only).
+1. Connect Wallet (wallet-standard: Phantom / Solflare / Backpack — Solana only).
 2. `GET /auth/nonce?address=<pubkey>` → single-use nonce (stored in Mongo, 5-min TTL).
-3. Sign `Sign in to RAVEN: <nonce>` via Privy `signMessage`.
+3. Sign `Sign in to RAVEN: <nonce>` with the wallet (`signMessage`).
 4. `POST /auth/verify {address, signature, role}` → backend verifies with tweetnacl, mints a **JWT** (`SESSION_SECRET`, 24h). Role is which page you started from — no separate auth.
-- **Buyer:** the JWT authorizes `/wallet/topup` (buyer signs a real SOL transfer to `PLATFORM_PAYTO` in-browser via Privy; backend confirms on-chain and credits their balance) and `/leases` (spends balance, no further signing).
+- **Buyer:** the JWT authorizes `/wallet/topup` (buyer signs a real SOL transfer to `PLATFORM_PAYTO` in their wallet; backend confirms on-chain and credits their balance) and `/leases` (spends balance, no further signing).
 - **Contributor:** verify mints an opaque `rvn_ctb_…` key tied to the verified address in the `contributors` collection; the page shows it plus a one-line `docker run`. The daemon sends only that key as a bearer — the backend resolves it to the payout address server-side, used solely to send the on-chain payout at lease end via `PLATFORM_PRIVATE_KEY`.
 
 **Lease flow**
-- **Top up** — Privy sends SOL to `PLATFORM_PAYTO`; registry confirms the tx on-chain (depositor signed, lamports landed) and credits MongoDB, idempotent by signature.
+- **Top up** — the wallet sends SOL to `PLATFORM_PAYTO`; registry confirms the tx on-chain (depositor signed, lamports landed) and credits MongoDB, idempotent by signature.
 - **Rent** — `POST /leases` queues a `start` command; the contributor's next heartbeat picks it up, runs the container + bore tunnel, posts `ready`; the lease goes `active` with an `ssh` command.
 - **Release / exhaust** — registry bills the exact seconds used (charge in MongoDB), pays the contributor on-chain, and sends a `stop` command that destroys the container.
 
@@ -72,7 +72,7 @@ npm install
 npm run backend                    # 1. the registry            → :4000
 
 # 2. web UI                                                     → http://localhost:3000
-cp web/.env.example web/.env       # set NEXT_PUBLIC_PRIVY_APP_ID (Solana app from dashboard.privy.io)
+cp web/.env.example web/.env       # set NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
 npm run web                        # Buyer at / · "Become a Contributor" at /contributor
 
 # 3. share THIS machine's compute — get RAVEN_KEY from the /contributor page after signing in
@@ -82,7 +82,7 @@ RAVEN_KEY=rvn_ctb_… npm run contributor
 BUYER_PRIVATE_KEY=<buyer-key> npm run client
 ```
 
-Both roles authenticate the same way: **Connect Wallet → sign a nonce via Privy**. No key entry,
+Both roles authenticate the same way: **Connect Wallet → sign a nonce**. No key entry,
 no `.env` wallet setup — the buyer additionally signs a real top-up transfer in-browser. The
 contributor daemon never touches a wallet; it carries only the `RAVEN_KEY` bearer it was handed.
 
@@ -150,8 +150,8 @@ build time). See `.env.example` and `web/.env.example` for every variable.
 ## What's verified vs. what needs your machine
 
 Compiles + builds clean (full `npm run typecheck`, `npm test`, web static export). Requires your
-environment to run end-to-end: a MongoDB database (`MONGODB_URI`), a `SESSION_SECRET`, a Privy app
-(`NEXT_PUBLIC_PRIVY_APP_ID`, Solana enabled), a platform account (`PLATFORM_PAYTO` +
+environment to run end-to-end: a MongoDB database (`MONGODB_URI`), a `SESSION_SECRET`, a Solana
+wallet in the browser, a platform account (`PLATFORM_PAYTO` +
 `PLATFORM_PRIVATE_KEY`), the Docker sandbox lifecycle (a running Docker daemon), outbound network for
 the bore tunnel, an SSH client, and an RPC reachable to confirm top-ups + send payouts (funded devnet
 accounts).
@@ -170,7 +170,7 @@ accounts).
   This is what keeps the DB quiet — heartbeats and the watchdog never write to MongoDB.
 - **SSH auth is a per-lease password** (your wallet address) over a throwaway root container; fine
   for ephemeral compute, but it's a password, not a key — use a real key flow for anything sensitive.
-- **Auth:** both roles connect through Privy and sign a single-use nonce (Mongo, 5-min TTL); verify
+- **Auth:** both roles connect a Solana wallet and sign a single-use nonce (Mongo, 5-min TTL); verify
   mints a JWT (`SESSION_SECRET`). Spending a balance needs that JWT, so nobody can spend someone
   else's balance. The contributor daemon holds only its `rvn_ctb_…` bearer key — no wallet, no
   signing on the box. `PLATFORM_PRIVATE_KEY` is read only server-side, at payout time; it never

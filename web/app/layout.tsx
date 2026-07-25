@@ -9,8 +9,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body>
+    // suppressHydrationWarning: wallet browser extensions inject attributes on <html>/<body> before
+    // React hydrates, which is otherwise reported as a mismatch. It suppresses only these elements.
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

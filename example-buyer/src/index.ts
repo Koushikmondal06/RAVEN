@@ -21,11 +21,10 @@ import {
 } from '@solana/kit';
 import { Client } from 'ssh2';
 import nacl from 'tweetnacl';
+import { RPC_URL, WS_URL } from '../../shared/cluster.js';
 import type { LeaseInfo, NodeInfo } from '../../shared/types.js';
 
 const REGISTRY_URL = process.env.REGISTRY_URL ?? 'http://localhost:4000';
-const RPC_URL = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
-const WS_URL = process.env.SOLANA_WS_URL ?? RPC_URL.replace(/^http/, 'ws');
 const TOPUP_SOL = Number(process.env.BUYER_TOPUP_SOL ?? 0.05);
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 

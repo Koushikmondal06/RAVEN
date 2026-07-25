@@ -19,10 +19,9 @@ import {
   signature as toSignature,
 } from '@solana/kit';
 import nacl from 'tweetnacl';
+import { RPC_URL, WS_URL } from '../../shared/cluster.js';
 
-export const RPC_URL = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
-export const WS_URL =
-  process.env.SOLANA_WS_URL ?? RPC_URL.replace(/^http/, 'ws');
+export { RPC_URL, WS_URL };
 export const PLATFORM_PAYTO = process.env.PLATFORM_PAYTO ?? '';
 
 const rpc = createSolanaRpc(RPC_URL);

@@ -7,6 +7,11 @@ import type { NextConfig } from 'next';
 loadEnv({ path: '.env' });
 loadEnv({ path: '../.env' });
 
+// The MAINNET toggle lives in the root .env as a plain var; surface it to the client build.
+if (process.env.MAINNET && !process.env.NEXT_PUBLIC_MAINNET) {
+  process.env.NEXT_PUBLIC_MAINNET = process.env.MAINNET;
+}
+
 // Static export: the wallet stack is client-only, so there is no server to run — `next build`
 // emits a plain static bundle to out/, served by nginx exactly like the old Vite build.
 const config: NextConfig = {

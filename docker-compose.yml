@@ -18,10 +18,10 @@ services:
       dockerfile: web/Dockerfile
       # NEXT_PUBLIC_* are baked in at build time — set them in .env before building.
       args:
-        NEXT_PUBLIC_PRIVY_APP_ID: ${NEXT_PUBLIC_PRIVY_APP_ID:-}
         NEXT_PUBLIC_REGISTRY_URL: ${NEXT_PUBLIC_REGISTRY_URL:-http://localhost:4000}
         NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
         NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-devnet}
+        MAINNET: ${MAINNET:-false}
     ports: ['3000:80']
 
   buyer:
