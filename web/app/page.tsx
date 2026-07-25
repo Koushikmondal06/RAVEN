@@ -118,6 +118,7 @@ function Explore() {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
   const [lease, setLease] = useState<LeaseInfo | null>(null);
   const [minIsolation, setMinIsolation] = useState<IsolationTier | ''>('');
+  const [sshPublicKey, setSshPublicKey] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -146,11 +147,17 @@ function Explore() {
   const rent = async (nodeId: string) => {
     setError('');
     try {
-      setLease(await api<LeaseInfo>('/leases', { body: { nodeId, minIsolation: minIsolation || undefined } }));
+      setLease(
+        await api<LeaseInfo>('/leases', {
+          body: { nodeId, minIsolation: minIsolation || undefined, sshPublicKey: sshPublicKey.trim() },
+        }),
+      );
     } catch (e) {
       setError((e as Error).message);
     }
   };
+
+  const keyOk = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+) /.test(sshPublicKey.trim());
 
   const meetsMin = (n: NodeInfo) => !minIsolation || satisfiesTier(n.isolation, minIsolation);
 
@@ -167,6 +174,14 @@ function Explore() {
               <option value="microvm">microVM</option>
             </select>
           </label>
+        </div>
+        <div style={{ marginBottom: '0.75rem' }}>
+          <input
+            style={{ width: '100%' }}
+            placeholder="SSH public key — paste your ssh-ed25519 … (from ssh-keygen -t ed25519)"
+            value={sshPublicKey}
+            onChange={(e) => setSshPublicKey(e.target.value)}
+          />
         </div>
         {nodes.length === 0 ? (
           <p className="sub">No nodes online. Start a contributor.</p>
@@ -194,7 +209,8 @@ function Explore() {
                   <td>{sol(n.rateLamportsPerHour)}</td>
                   <td>
                     <button
-                      disabled={n.busy || !meetsMin(n) || !!(lease && lease.status !== 'ended')}
+                      disabled={n.busy || !meetsMin(n) || !keyOk || !!(lease && lease.status !== 'ended')}
+                      title={keyOk ? '' : 'paste an SSH public key first'}
                       onClick={() => rent(n.id)}
                     >
                       {n.busy ? 'Busy' : !meetsMin(n) ? 'Below min' : 'Rent'}
@@ -221,7 +237,8 @@ function Lease({ lease, onEnded }: { lease: LeaseInfo; onEnded: (l: LeaseInfo) =
         <>
           <code>{lease.ssh}</code>
           <p className="sub">
-            password: {lease.password} · balance runs out in {clock(lease.secondsRemaining ?? 0)}
+            {lease.password ? `password: ${lease.password} · ` : 'key auth (ssh -i your-key) · '}
+            balance runs out in {clock(lease.secondsRemaining ?? 0)}
           </p>
           <button onClick={() => api<LeaseInfo>(`/leases/${lease.id}/release`, { body: {} }).then(onEnded)}>
             Release

@@ -68,6 +68,10 @@ export class DockerBackend implements SandboxBackend {
     await this.ensureImage();
     const name = box(spec.leaseId);
     // Hardened + mount-less: no host filesystem, no privilege escalation, capped CPU/RAM/PIDs.
+    const env: string[] = [];
+    if (spec.sshPublicKey) env.push('-e', `SSH_PUBKEY=${spec.sshPublicKey}`);
+    if (spec.sshPassword) env.push('-e', `ROOT_PASSWORD=${spec.sshPassword}`);
+    if (spec.ttlSeconds > 0) env.push('-e', `SANDBOX_TTL=${spec.ttlSeconds}`);
     await run('docker', [
       'run', '-d', '--name', name,
       '-p', '0:22',
@@ -75,7 +79,7 @@ export class DockerBackend implements SandboxBackend {
       '--memory', `${spec.memMib}m`,
       '--pids-limit', '512',
       '--security-opt', 'no-new-privileges',
-      '-e', `ROOT_PASSWORD=${spec.sshPassword ?? ''}`,
+      ...env,
       this.cfg.image,
     ]);
     const { stdout } = await run('docker', ['port', name, '22']);

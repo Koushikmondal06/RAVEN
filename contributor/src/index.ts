@@ -57,9 +57,10 @@ async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }
     cpuCores: CPUS,
     memMib: MEM_MB,
     diskMib: 0,
+    sshPublicKey: cmd.sshPublicKey,
     sshPassword: cmd.password,
-    ttlSeconds: 0,
-    egress: { mode: 'open' },
+    ttlSeconds: cmd.ttlSeconds,
+    egress: { mode: EGRESS_MODE },
   });
   handles.set(cmd.leaseId, handle);
   await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, host: handle.sshHost, port: handle.sshPort });

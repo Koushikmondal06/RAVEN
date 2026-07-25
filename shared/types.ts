@@ -52,7 +52,12 @@ export type LeaseInfo = {
   error?: string;
 };
 
-/** Registry -> contributor, handed out on the heartbeat response. */
+/** Registry -> contributor, handed out on the heartbeat response.
+ *  `sshPublicKey` is the default auth; `password` only when ALLOW_PASSWORD_SSH is on (legacy). */
 export type NodeCommand =
-  | { type: 'start'; leaseId: string; password: string }
+  | { type: 'start'; leaseId: string; sshPublicKey?: string; password?: string; ttlSeconds: number }
   | { type: 'stop'; leaseId: string };
+
+/** OpenSSH single-line public key, e.g. "ssh-ed25519 AAAA… comment". */
+export const isSshPublicKey = (s: unknown): s is string =>
+  typeof s === 'string' && /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+) [A-Za-z0-9+/]+=*(\s.*)?$/.test(s.trim());

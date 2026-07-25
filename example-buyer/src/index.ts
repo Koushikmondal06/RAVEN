@@ -19,7 +19,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
 } from '@solana/kit';
-import { Client } from 'ssh2';
+import { Client, utils } from 'ssh2';
 import nacl from 'tweetnacl';
 import { RPC_URL, WS_URL } from '../../shared/cluster.js';
 import { type IsolationTier, type LeaseInfo, type NodeInfo, TIER_RANK, satisfiesTier } from '../../shared/types.js';
@@ -101,7 +101,11 @@ for epoch in range(1,11):
 print('done', __import__('platform').node())
 "`;
 
-function sshRun(host: string, port: number, password: string, command: string) {
+// Ephemeral SSH keypair — the agent generates it, sends the public half, and authenticates with the
+// private half. No password, nothing guessable, nothing on the contributor's box.
+const sshKeys = utils.generateKeyPairSync('ed25519');
+
+function sshRun(host: string, port: number, privateKey: string, command: string) {
   return new Promise<void>((resolve, reject) => {
     const conn = new Client();
     conn
@@ -118,7 +122,7 @@ function sshRun(host: string, port: number, password: string, command: string) {
       )
       .on('error', reject)
       // Throwaway ephemeral sandbox: there is no known host key to pin on first contact.
-      .connect({ host, port, username: 'root', password, readyTimeout: 30_000 });
+      .connect({ host, port, username: 'root', privateKey, readyTimeout: 30_000 });
   });
 }
 
@@ -150,7 +154,7 @@ console.log(
   `renting ${cheapest.label} (${cheapest.isolation}) at ${sol(cheapest.rateLamportsPerHour, 4)} SOL/hour`,
 );
 
-let lease = await api<LeaseInfo>('/leases', { nodeId: cheapest.id, minIsolation });
+let lease = await api<LeaseInfo>('/leases', { nodeId: cheapest.id, minIsolation, sshPublicKey: sshKeys.public });
 for (let i = 0; i < 60 && lease.status === 'starting'; i++) {
   await sleep(2000);
   lease = await api<LeaseInfo>(`/leases/${lease.id}`);
@@ -160,7 +164,7 @@ console.log(`${lease.ssh}\n`);
 
 const [, hostPart, portPart] = lease.ssh.match(/root@(\S+) -p (\d+)/)!;
 try {
-  await sshRun(hostPart, Number(portPart), lease.password!, TRAINING);
+  await sshRun(hostPart, Number(portPart), sshKeys.private, TRAINING);
 } finally {
   const ended = await api<LeaseInfo>(`/leases/${lease.id}/release`, {});
   console.log(`\nreleased after ${ended.billedSeconds}s — drew down ${sol(ended.billedLamports ?? '0')} SOL`);

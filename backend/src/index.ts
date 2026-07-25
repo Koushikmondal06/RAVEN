@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
 import type { EgressPolicy, IsolationTier, LeaseInfo, NodeCommand, NodeInfo } from '../../shared/types.js';
-import { satisfiesTier } from '../../shared/types.js';
+import { isSshPublicKey, satisfiesTier } from '../../shared/types.js';
 import {
   NONCE_TTL_MS,
   contributorPayout,
@@ -34,6 +34,9 @@ import { PLATFORM_PAYTO, confirmDeposit, payoutSol } from './solana.js';
 const PORT = Number(process.env.PORT ?? 4000);
 const METER_INTERVAL_MS = Number(process.env.METER_INTERVAL_MS ?? 10_000);
 const OFFLINE_AFTER_MS = 20_000;
+// Off by default: SSH is key-only. The wallet-address password is guessable from any explorer.
+const ALLOW_PASSWORD_SSH = process.env.ALLOW_PASSWORD_SSH === 'true';
+const MAX_LEASE_TTL_S = Number(process.env.MAX_LEASE_TTL_S ?? 86_400); // guest self-destruct cap
 
 type Node = {
   id: string;
@@ -53,7 +56,8 @@ type Lease = {
   id: string;
   nodeId: string;
   address: string;
-  password: string;
+  sshPublicKey?: string; // default auth
+  password?: string; // legacy, only when ALLOW_PASSWORD_SSH
   rate: bigint;
   status: 'starting' | 'active' | 'ended';
   host?: string;
@@ -98,7 +102,8 @@ async function toLeaseInfo(l: Lease): Promise<LeaseInfo> {
   };
   if (l.status === 'active' && l.host) {
     info.ssh = `ssh root@${l.host} -p ${l.port}`;
-    info.password = l.password;
+    if (l.password) info.password = l.password; // undefined in key mode
+
     const spent = cost(l.rate, (Date.now() - (l.startedAt ?? Date.now())) / 1000);
     const left = (await getBalance(l.address)) - spent;
     info.secondsRemaining = Math.max(0, secondsRemaining(l.rate, left > 0n ? left : 0n));
@@ -275,6 +280,15 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
     return res.status(409).json({ error: `node isolation ${node.isolation} is below requested ${minIsolation}`, availableTiers });
   }
 
+  // SSH is key-only unless ALLOW_PASSWORD_SSH; a bad or missing key is rejected up front.
+  const sshPublicKey = req.body?.sshPublicKey;
+  if (sshPublicKey !== undefined && !isSshPublicKey(sshPublicKey)) {
+    return res.status(400).json({ error: 'sshPublicKey is not a valid OpenSSH public key' });
+  }
+  if (!sshPublicKey && !ALLOW_PASSWORD_SSH) {
+    return res.status(400).json({ error: 'sshPublicKey required (password SSH is disabled)' });
+  }
+
   const address = sessionAddress(req);
   const balance = await getBalance(address);
   if (balance < cost(node.rate, 60)) return res.status(402).json({ error: 'top up first: under one minute of balance' });
@@ -283,13 +297,23 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
     id: randomUUID(),
     nodeId: node.id,
     address,
-    password: address, // per-lease password on a throwaway root container
+    sshPublicKey: sshPublicKey || undefined,
+    // legacy password (the wallet address) only when explicitly allowed
+    password: !sshPublicKey && ALLOW_PASSWORD_SSH ? address : undefined,
     rate: node.rate,
     status: 'starting',
   };
   leases.set(lease.id, lease);
   node.leaseId = lease.id;
-  push(node.id, { type: 'start', leaseId: lease.id, password: lease.password });
+  // Guest hard-TTL backstop: self-destruct at the current balance runway even if the registry dies.
+  const ttlSeconds = Math.min(MAX_LEASE_TTL_S, Math.max(60, Math.floor(secondsRemaining(node.rate, balance))));
+  push(node.id, {
+    type: 'start',
+    leaseId: lease.id,
+    sshPublicKey: lease.sshPublicKey,
+    password: lease.password,
+    ttlSeconds,
+  });
   res.json(await toLeaseInfo(lease));
 }));
 
@@ -323,6 +347,10 @@ setInterval(() => {
     })();
   }
 }, METER_INTERVAL_MS);
+
+if (ALLOW_PASSWORD_SSH) {
+  console.warn('WARNING: ALLOW_PASSWORD_SSH=true — leases fall back to a wallet-address password, guessable from any explorer. Prefer SSH keys.');
+}
 
 await initSchema();
 app.listen(PORT, () => console.log(`RAVEN registry on :${PORT} (payments -> ${PLATFORM_PAYTO || 'UNSET'})`));
