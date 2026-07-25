@@ -39,8 +39,15 @@ import { DepositNotConfirmedError, PLATFORM_PAYTO, confirmDeposit, payoutSol } f
 const PORT = Number(process.env.PORT ?? 4000);
 const METER_INTERVAL_MS = Number(process.env.METER_INTERVAL_MS ?? 10_000);
 const OFFLINE_AFTER_MS = 20_000;
-// Off by default: SSH is key-only. The wallet-address password is guessable from any explorer.
-const ALLOW_PASSWORD_SSH = process.env.ALLOW_PASSWORD_SSH === 'true';
+// Password SSH is the default: the buyer signs in with a wallet and gets a copy-paste `ssh` command,
+// no keygen, no key file. The password IS their wallet address.
+//
+// Understand what that trades away: a Solana address is public — it is in every explorer, in this
+// API's own responses, and in the URL bar — so the password to a running lease is effectively public
+// too. Anyone who knows the address can log in as root for as long as the lease lives. Set
+// REQUIRE_SSH_KEY=true to demand a buyer-supplied public key instead (the agent in example-buyer/
+// always sends one, and a key wins over the password whenever it is present).
+const REQUIRE_SSH_KEY = process.env.REQUIRE_SSH_KEY === 'true';
 const MAX_LEASE_TTL_S = Number(process.env.MAX_LEASE_TTL_S ?? 86_400); // guest self-destruct cap
 // The tunnel relay every lease's SSH port is published through. Handed to each daemon at register
 // time (over its authenticated RAVEN_KEY call) rather than configured per contributor: the operator
@@ -64,8 +71,8 @@ type Lease = {
   id: string;
   nodeId: string;
   address: string;
-  sshPublicKey?: string; // default auth
-  password?: string; // legacy, only when ALLOW_PASSWORD_SSH
+  sshPublicKey?: string; // wins when the buyer supplies one (the autonomous agent does)
+  password?: string; // the buyer's wallet address — the default for the web UI
   rate: bigint;
   status: 'starting' | 'active' | 'ended';
   host?: string;
@@ -108,7 +115,7 @@ async function toLeaseInfo(l: Lease): Promise<LeaseInfo> {
   };
   if (l.status === 'active' && l.host) {
     info.ssh = `ssh root@${l.host} -p ${l.port}`;
-    if (l.password) info.password = l.password; // undefined in key mode
+    if (l.password) info.password = l.password; // undefined when the buyer supplied a key
 
     const spent = cost(l.rate, (Date.now() - (l.startedAt ?? Date.now())) / 1000);
     const left = (await getBalance(l.address)) - spent;
@@ -340,13 +347,14 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   if (!node || !online(node)) return res.status(404).json({ error: 'node not available' });
   if (node.leaseId) return res.status(409).json({ error: 'node is busy' });
 
-  // SSH is key-only unless ALLOW_PASSWORD_SSH; a bad or missing key is rejected up front.
+  // A key is optional but still validated: a malformed one would land in authorized_keys and lock
+  // the buyer out of a lease they are already paying for.
   const sshPublicKey = req.body?.sshPublicKey;
-  if (sshPublicKey !== undefined && !isSshPublicKey(sshPublicKey)) {
+  if (sshPublicKey !== undefined && sshPublicKey !== '' && !isSshPublicKey(sshPublicKey)) {
     return res.status(400).json({ error: 'sshPublicKey is not a valid OpenSSH public key' });
   }
-  if (!sshPublicKey && !ALLOW_PASSWORD_SSH) {
-    return res.status(400).json({ error: 'sshPublicKey required (password SSH is disabled)' });
+  if (!sshPublicKey && REQUIRE_SSH_KEY) {
+    return res.status(400).json({ error: 'sshPublicKey required (REQUIRE_SSH_KEY is on)' });
   }
 
   const address = sessionAddress(req);
@@ -359,8 +367,9 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
     nodeId: node.id,
     address,
     sshPublicKey: sshPublicKey || undefined,
-    // legacy password (the wallet address) only when explicitly allowed
-    password: !sshPublicKey && ALLOW_PASSWORD_SSH ? address : undefined,
+    // No key supplied → the wallet address is the root password. The buyer already knows it and it
+    // needs no out-of-band channel, which is the whole point; see REQUIRE_SSH_KEY above for the cost.
+    password: sshPublicKey ? undefined : address,
     rate: node.rate,
     status: 'starting',
   };
@@ -409,8 +418,12 @@ setInterval(() => {
   }
 }, METER_INTERVAL_MS);
 
-if (ALLOW_PASSWORD_SSH) {
-  console.warn('WARNING: ALLOW_PASSWORD_SSH=true — leases fall back to a wallet-address password, guessable from any explorer. Prefer SSH keys.');
+if (!REQUIRE_SSH_KEY) {
+  console.warn(
+    'NOTE: keyless leases use the buyer\'s wallet address as the root password. That address is ' +
+      'public, so anyone who knows it can SSH into a live lease. Set REQUIRE_SSH_KEY=true to demand ' +
+      'a buyer-supplied public key instead.',
+  );
 }
 
 await initSchema();

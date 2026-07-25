@@ -190,8 +190,8 @@ There is no root `.env` — each app reads its own: `backend/.env`, `web/.env`, 
 
 Contributor knobs are all optional: **`RATE_LAMPORTS_PER_HOUR`** prices the node, **`SHARE_CPUS`** /
 **`SHARE_MEM_MB`** size each lease, **`TUNNEL_MODE`** picks bore vs. a same-LAN port, and
-**`REAP_INTERVAL_MS`** paces the orphan reaper. SSH is key-only unless the registry sets
-`ALLOW_PASSWORD_SSH=true` (off by default).
+**`REAP_INTERVAL_MS`** paces the orphan reaper. SSH is password-based by default (the password is the buyer's wallet
+address); `REQUIRE_SSH_KEY=true` on the registry switches to mandatory key auth.
 
 ## Demo script (the money shot)
 
@@ -231,10 +231,12 @@ accounts).
   `METER_INTERVAL_MS` whether the balance is exhausted, so worst-case over-use is one tick.
 - **Nodes + leases are in-memory:** a registry restart drops live sessions (the sockets die anyway).
   This is what keeps the DB quiet — heartbeats and the watchdog never write to MongoDB.
-- **SSH auth is key-only** by default: the buyer supplies a public key (the web app takes a pasted
-  key; the agent generates an ephemeral keypair), the sandbox runs `PasswordAuthentication no` /
-  `PermitRootLogin prohibit-password`, and nothing guessable exists on the box. The old
-  wallet-address password returns only behind `ALLOW_PASSWORD_SSH=true`, with a startup warning.
+- **SSH auth is a password by default, and that password is the buyer's wallet address.** No keygen,
+  no key file — rent a node and the UI hands you `ssh root@… -p …` plus the password. The cost is
+  real: a Solana address is public, so anyone who knows a buyer's address can log into their live
+  lease as root. **Treat a lease as a public workspace** — no secrets, no credentials, no private
+  data. A buyer who sends an `sshPublicKey` gets key-only auth instead (the agent in `example-buyer/`
+  always does), and `REQUIRE_SSH_KEY=true` on the registry makes that mandatory for everyone.
 - **Isolation is a hardened container, and nothing stronger** (see [The sandbox](#the-sandbox)): no
   host filesystem, `--cap-drop=ALL`, read-only root with `noexec,nosuid` scratch tmpfs,
   `no-new-privileges`, capped CPU/RAM/PIDs, key-only SSH. The kernel is **shared with the contributor's

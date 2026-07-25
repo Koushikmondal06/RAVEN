@@ -141,7 +141,6 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
 export function Explore() {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
   const [lease, setLease] = useState<LeaseInfo | null>(null);
-  const [sshPublicKey, setSshPublicKey] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -157,33 +156,26 @@ export function Explore() {
     return () => clearInterval(id);
   }, [lease]);
 
+  // No SSH key: the registry sets the root password to this wallet's address and returns it below.
   const rent = async (nodeId: string) => {
     setError('');
     try {
-      setLease(await api<LeaseInfo>('/leases', { body: { nodeId, sshPublicKey: sshPublicKey.trim() } }));
+      setLease(await api<LeaseInfo>('/leases', { body: { nodeId } }));
     } catch (e) {
       setError((e as Error).message);
     }
   };
-
-  const keyOk = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+) /.test(sshPublicKey.trim());
 
   return (
     <>
       <section>
         <h2>Explore</h2>
         <p className="sub" style={{ marginBottom: '0.75rem' }}>
-          Each lease is a hardened, mount-less Docker container on the contributor's machine, reachable
-          over an outbound tunnel. It shares that host's kernel — don't put secrets in one.
+          Rent a node and you get an <code style={{ display: 'inline', padding: '0.1rem 0.3rem' }}>ssh</code>{' '}
+          command plus a root password — no keygen, no key file. Each lease is a hardened, mount-less
+          Docker container sharing the contributor's kernel, and its password is your (public) wallet
+          address, so treat a lease as a public workspace: no secrets, no credentials, no private data.
         </p>
-        <div style={{ marginBottom: '0.75rem' }}>
-          <input
-            style={{ width: '100%' }}
-            placeholder="SSH public key — paste your ssh-ed25519 … (from ssh-keygen -t ed25519)"
-            value={sshPublicKey}
-            onChange={(e) => setSshPublicKey(e.target.value)}
-          />
-        </div>
         {nodes.length === 0 ? (
           <p className="sub">No nodes online. Start a contributor.</p>
         ) : (
@@ -206,8 +198,7 @@ export function Explore() {
                   <td>{sol(n.rateLamportsPerHour)}</td>
                   <td>
                     <button
-                      disabled={n.busy || !keyOk || !!(lease && lease.status !== 'ended')}
-                      title={keyOk ? '' : 'paste an SSH public key first'}
+                      disabled={n.busy || !!(lease && lease.status !== 'ended')}
                       onClick={() => rent(n.id)}
                     >
                       {n.busy ? 'Busy' : 'Rent'}
@@ -233,10 +224,17 @@ function Lease({ lease, onEnded }: { lease: LeaseInfo; onEnded: (l: LeaseInfo) =
       {lease.status === 'active' && (
         <>
           <code>{lease.ssh}</code>
-          <p className="sub">
-            {lease.password ? `password: ${lease.password} · ` : 'key auth (ssh -i your-key) · '}
-            balance runs out in {clock(lease.secondsRemaining ?? 0)}
-          </p>
+          {lease.password ? (
+            <>
+              <p className="sub" style={{ marginTop: '0.5rem' }}>
+                Root password — <strong>your wallet address</strong>:
+              </p>
+              <code>{lease.password}</code>
+            </>
+          ) : (
+            <p className="sub">key auth (ssh -i your-key)</p>
+          )}
+          <p className="sub">balance runs out in {clock(lease.secondsRemaining ?? 0)}</p>
           <button onClick={() => api<LeaseInfo>(`/leases/${lease.id}/release`, { body: {} }).then(onEnded)}>
             Release
           </button>

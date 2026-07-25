@@ -117,8 +117,9 @@ Only `RAVEN_KEY` and `REGISTRY_URL` are required. Defaults shown.
 | `REAP_INTERVAL_MS` | `60000` | orphan-sandbox reaper period |
 | `KILL_PORT` | `4999` | local-only kill switch port |
 
-`ALLOW_PASSWORD_SSH=true` (on the **registry**, not here) re-enables the old wallet-address password.
-Off by default — SSH is key-only and the buyer supplies the public key.
+`REQUIRE_SSH_KEY=true` (on the **registry**, not here) forces buyers to supply an SSH public key. Off
+by default: a lease's root password is the buyer's wallet address, which is public — so assume anyone
+can reach a live lease, and that the sandbox is the only thing protecting your host.
 
 ## Safety model, briefly
 
@@ -128,8 +129,10 @@ Off by default — SSH is key-only and the buyer supplies the public key.
   `--read-only` root with `noexec,nosuid` scratch tmpfs, `no-new-privileges`, capped CPU/RAM/PIDs.
   The kernel is shared with your host — that is the boundary's ceiling, and it is why you should not
   run this on a machine that matters to you.
-- **The SSH key is injected per lease** and the container is destroyed at the end, so one buyer's key
-  can't reach the next lease.
+- **Credentials are per lease** — the injected key or password dies with the container, so one
+  buyer's access can't reach the next lease. Note the default password is the buyer's public wallet
+  address, so a live lease should be assumed reachable by third parties; the container boundary, not
+  the password, is what protects your machine.
 - **Teardown is guaranteed:** the sandbox self-destructs at a hard TTL, and a reaper reconciles live
   containers against known leases every `REAP_INTERVAL_MS`, removing both the sandbox and its tunnel.
 - **The Docker socket mount is host root.** For a longer-lived setup, see
