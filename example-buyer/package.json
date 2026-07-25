@@ -1,0 +1,20 @@
+{
+  "name": "@raven/example-buyer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@solana-program/system": "^0.13.0",
+    "@solana/kit": "^7.0.0",
+    "dotenv": "^17.2.3",
+    "ssh2": "^1.17.0",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/ssh2": "^1.15.5",
+    "tsx": "^4.23.1"
+  }
+}
