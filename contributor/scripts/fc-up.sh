@@ -56,4 +56,5 @@ jailer \
   -- --config-file config.json &
 
 # SSH reaches the guest on the tap /30. For remote buyers, bore-tunnel ${GUEST_IP}:22 instead.
-echo "${GUEST_IP} 22"
+# Print: HOST PORT OWN_CIDR — the daemon binds the per-lease nft ruleset to this /30.
+echo "${GUEST_IP} 22 ${HOST_IP%.*}.0/30"

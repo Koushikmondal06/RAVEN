@@ -37,6 +37,7 @@ const OFFLINE_AFTER_MS = 20_000;
 // Off by default: SSH is key-only. The wallet-address password is guessable from any explorer.
 const ALLOW_PASSWORD_SSH = process.env.ALLOW_PASSWORD_SSH === 'true';
 const MAX_LEASE_TTL_S = Number(process.env.MAX_LEASE_TTL_S ?? 86_400); // guest self-destruct cap
+const EGRESS_DROP_LIMIT = Number(process.env.EGRESS_DROP_LIMIT ?? 100_000); // per-lease dropped packets before suspend
 
 type Node = {
   id: string;
@@ -73,6 +74,7 @@ type Lease = {
 const nodes = new Map<string, Node>();
 const leases = new Map<string, Lease>();
 const queued = new Map<string, NodeCommand[]>(); // nodeId -> pending commands
+const suspended = new Set<string>(); // buyer addresses blocked for egress abuse
 
 const online = (n: Node) => Date.now() - n.lastSeen < OFFLINE_AFTER_MS;
 const push = (nodeId: string, cmd: NodeCommand) => queued.set(nodeId, [...(queued.get(nodeId) ?? []), cmd]);
@@ -235,6 +237,17 @@ app.post('/nodes/:id/heartbeat', requireContributorKey, (req, res) => {
   const node = ownedNode(req);
   if (!node) return res.status(404).json({ error: 'unknown node' });
   node.lastSeen = Date.now();
+  // The daemon reports per-lease egress drop counters; a lease slamming the firewall gets suspended
+  // (its buyer address blocked from new rentals) and torn down.
+  const dropCounters = (req.body?.dropCounters ?? {}) as Record<string, number>;
+  for (const [leaseId, drops] of Object.entries(dropCounters)) {
+    const lease = leases.get(leaseId);
+    if (lease && lease.status === 'active' && drops > EGRESS_DROP_LIMIT) {
+      console.warn(`lease ${leaseId} dropped ${drops} egress packets — suspending buyer ${lease.address}`);
+      suspended.add(lease.address);
+      void endLease(lease, 'egress abuse');
+    }
+  }
   const commands = queued.get(node.id) ?? [];
   queued.delete(node.id);
   res.json({ commands });
@@ -290,6 +303,7 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   }
 
   const address = sessionAddress(req);
+  if (suspended.has(address)) return res.status(403).json({ error: 'account suspended for egress abuse' });
   const balance = await getBalance(address);
   if (balance < cost(node.rate, 60)) return res.status(402).json({ error: 'top up first: under one minute of balance' });
 
@@ -307,12 +321,20 @@ app.post('/leases', requireSession, asyncRoute(async (req, res) => {
   node.leaseId = lease.id;
   // Guest hard-TTL backstop: self-destruct at the current balance runway even if the registry dies.
   const ttlSeconds = Math.min(MAX_LEASE_TTL_S, Math.max(60, Math.floor(secondsRemaining(node.rate, balance))));
+  // The node's advertised mode is the floor; a buyer may narrow it (allowlist CIDRs/ports) but the
+  // daemon still applies its own EGRESS_MODE, so this can only be as open as the node permits.
+  const egress: EgressPolicy = {
+    mode: node.egressMode,
+    allowCidrs: Array.isArray(req.body?.allowCidrs) ? req.body.allowCidrs.map(String) : undefined,
+    allowPorts: Array.isArray(req.body?.allowPorts) ? req.body.allowPorts.map(Number) : undefined,
+  };
   push(node.id, {
     type: 'start',
     leaseId: lease.id,
     sshPublicKey: lease.sshPublicKey,
     password: lease.password,
     ttlSeconds,
+    egress,
   });
   res.json(await toLeaseInfo(lease));
 }));

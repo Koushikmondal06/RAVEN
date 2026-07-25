@@ -61,13 +61,15 @@ export class FirecrackerBackend implements SandboxBackend {
       spec.sshPublicKey ?? '',
       this.cfg.image,
     ]);
-    const [host, port] = stdout.trim().split(/\s+/);
+    const [host, port, ownCidr] = stdout.trim().split(/\s+/);
+    const tap = `rvn${spec.leaseId.slice(0, 8)}`;
     return {
       leaseId: spec.leaseId,
       backend: this.name,
       sshHost: host,
       sshPort: Number(port),
-      internal: { tap: `rvn${spec.leaseId.slice(0, 8)}`, jail: `/srv/jailer/firecracker/${spec.leaseId}` },
+      // iface + ownCidr let the daemon bind this lease's egress firewall to its tap /30.
+      internal: { tap, iface: tap, ownCidr, jail: `/srv/jailer/firecracker/${spec.leaseId}` },
     };
   }
 

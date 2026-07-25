@@ -55,7 +55,7 @@ export type LeaseInfo = {
 /** Registry -> contributor, handed out on the heartbeat response.
  *  `sshPublicKey` is the default auth; `password` only when ALLOW_PASSWORD_SSH is on (legacy). */
 export type NodeCommand =
-  | { type: 'start'; leaseId: string; sshPublicKey?: string; password?: string; ttlSeconds: number }
+  | { type: 'start'; leaseId: string; sshPublicKey?: string; password?: string; ttlSeconds: number; egress: EgressPolicy }
   | { type: 'stop'; leaseId: string };
 
 /** OpenSSH single-line public key, e.g. "ssh-ed25519 AAAA… comment". */

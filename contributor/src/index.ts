@@ -1,7 +1,9 @@
 import '../../shared/env.js';
 
+import http from 'node:http';
 import os from 'node:os';
 import type { EgressPolicy, NodeCommand } from '../../shared/types.js';
+import { applyEgress, readDropCounter, removeEgress } from './net/nft.js';
 import { type SandboxBackend, type SandboxHandle, selectBackend } from './sandbox/index.js';
 import { logCapabilities } from './sandbox/probe.js';
 import { reap } from './sandbox/reaper.js';
@@ -18,8 +20,10 @@ const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
 const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'docker';
-const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'open') as EgressPolicy['mode']; // enforced in phase 6
+// Default-deny-ish: only DNS + a buyer's allowlist leave the sandbox. Set 'open' to disable.
+const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'allowlist') as EgressPolicy['mode'];
 const REAP_INTERVAL_MS = Number(process.env.REAP_INTERVAL_MS ?? 60_000);
+const KILL_PORT = Number(process.env.KILL_PORT ?? 4999); // local-only kill switch
 const IMAGE = 'raven-sandbox';
 
 if (!RAVEN_KEY) {
@@ -54,6 +58,8 @@ const backend: SandboxBackend = await selectBackend(SANDBOX_BACKEND, {
 const handles = new Map<string, SandboxHandle>();
 
 async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }>) {
+  // The daemon's EGRESS_MODE is the floor; the buyer's request can only narrow it, never widen it.
+  const egress: EgressPolicy = { ...cmd.egress, mode: EGRESS_MODE === 'open' ? cmd.egress.mode : EGRESS_MODE };
   const handle = await backend.create({
     leaseId: cmd.leaseId,
     cpuCores: CPUS,
@@ -62,19 +68,44 @@ async function start(nodeId: string, cmd: Extract<NodeCommand, { type: 'start' }
     sshPublicKey: cmd.sshPublicKey,
     sshPassword: cmd.password,
     ttlSeconds: cmd.ttlSeconds,
-    egress: { mode: EGRESS_MODE },
+    egress,
   });
   handles.set(cmd.leaseId, handle);
+  // Apply the per-lease firewall when the backend exposes a filterable iface (tap-based backends).
+  const iface = handle.internal.iface;
+  if (iface) {
+    await applyEgress(cmd.leaseId, iface, handle.internal.ownCidr ?? '0.0.0.0/32', egress).catch((e) => {
+      console.error(`egress rules failed for ${cmd.leaseId}:`, (e as Error).message);
+    });
+  } else if (egress.mode !== 'open') {
+    console.warn(`egress ${egress.mode} requested but ${backend.name} exposes no filterable iface — not enforced`);
+  }
   await post(`/nodes/${nodeId}/ready`, { leaseId: cmd.leaseId, host: handle.sshHost, port: handle.sshPort });
   console.log(`lease ${cmd.leaseId} up: ssh root@${handle.sshHost} -p ${handle.sshPort}`);
 }
 
 async function stop(leaseId: string) {
   const handle = handles.get(leaseId) ?? { leaseId, backend: backend.name, sshHost: '', sshPort: 0, internal: {} };
+  if (handle.internal.iface) await removeEgress(leaseId, handle.internal.iface).catch(() => {});
   await backend.destroy(handle);
   handles.delete(leaseId);
   console.log(`lease ${leaseId} torn down`);
 }
+
+// Kill switch: POST http://127.0.0.1:KILL_PORT/kill tears down every live sandbox and its rules now.
+http
+  .createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/kill') {
+      const ids = [...handles.keys()];
+      console.warn(`kill switch: tearing down ${ids.length} sandbox(es)`);
+      void Promise.all(ids.map((id) => stop(id).catch(() => {}))).then(() => {
+        res.writeHead(200).end(JSON.stringify({ killed: ids }));
+      });
+    } else {
+      res.writeHead(404).end();
+    }
+  })
+  .listen(KILL_PORT, '127.0.0.1');
 
 const { nodeId } = await post('/nodes/register', {
   label: LABEL,
@@ -105,7 +136,12 @@ setInterval(reapNow, REAP_INTERVAL_MS);
 
 setInterval(async () => {
   try {
-    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, {});
+    // Report each live lease's egress-drop tally so the registry can suspend an abusive buyer.
+    const dropCounters: Record<string, number> = {};
+    for (const [leaseId, h] of handles) {
+      if (h.internal.iface) dropCounters[leaseId] = await readDropCounter(leaseId);
+    }
+    const { commands } = await post(`/nodes/${nodeId}/heartbeat`, { dropCounters });
     for (const cmd of commands as NodeCommand[]) {
       if (cmd.type === 'start') {
         await start(nodeId, cmd).catch(async (e) => {
