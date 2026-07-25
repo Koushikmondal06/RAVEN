@@ -1,13 +1,10 @@
 import { config as loadEnv } from 'dotenv';
 import type { NextConfig } from 'next';
 
-// Next only reads web/.env; the rest of the monorepo reads the repo-root .env. Load web/.env first
-// (it wins), then the root, so NEXT_PUBLIC_* set in either place reaches the build. dotenv never
-// overrides an already-set var, so web/.env and inline FOO=bar both take precedence over root.
+// Load web/.env before Next does, so the MAINNET mapping below sees it.
 loadEnv({ path: '.env' });
-loadEnv({ path: '../.env' });
 
-// The MAINNET toggle lives in the root .env as a plain var; surface it to the client build.
+// MAINNET is a plain var in web/.env; surface it to the client build as NEXT_PUBLIC_.
 if (process.env.MAINNET && !process.env.NEXT_PUBLIC_MAINNET) {
   process.env.NEXT_PUBLIC_MAINNET = process.env.MAINNET;
 }

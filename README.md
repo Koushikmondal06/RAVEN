@@ -65,21 +65,26 @@ flowchart LR
 
 ## Run it
 
+Each app reads its own `.env` (no root `.env`) — copy the example next to the one you're running.
+
 ```bash
-cp .env.example .env               # MONGODB_URI, PLATFORM_PAYTO, PLATFORM_PRIVATE_KEY, SESSION_SECRET
 npm install
 
-npm run backend                    # 1. the registry            → :4000
+# 1. the registry                                              → :4000
+cp backend/.env.example backend/.env   # MONGODB_URI, PLATFORM_PAYTO, PLATFORM_PRIVATE_KEY, SESSION_SECRET
+npm run backend
 
-# 2. web UI                                                     → http://localhost:3000
-cp web/.env.example web/.env       # set NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
-npm run web                        # Buyer at / · "Become a Contributor" at /contributor
+# 2. web UI                                                    → http://localhost:3000
+cp web/.env.example web/.env           # NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
+npm run web                            # Buyer at / · "Become a Contributor" at /contributor
 
 # 3. share THIS machine's compute — get RAVEN_KEY from the /contributor page after signing in
-RAVEN_KEY=rvn_ctb_… npm run contributor
+cp contributor/.env.example contributor/.env   # set RAVEN_KEY
+npm run contributor
 
 # …or the autonomous buyer agent (its own funded key — signs in, tops up, rents)
-BUYER_PRIVATE_KEY=<buyer-key> npm run client
+cp example-buyer/.env.example example-buyer/.env   # set BUYER_PRIVATE_KEY
+npm run client
 ```
 
 Both roles authenticate the same way: **Connect Wallet → sign a nonce**. No key entry,
@@ -95,15 +100,18 @@ Each piece is its own Compose service, run independently. The backend usually li
 contributor runs on each machine sharing compute and points at that backend via `REGISTRY_URL`.
 
 ```bash
-cp .env.example .env                     # then set REGISTRY_URL to your backend
+# each service reads its own <app>/.env — copy the examples first
+cp backend/.env.example backend/.env
+cp contributor/.env.example contributor/.env
+cp example-buyer/.env.example example-buyer/.env
 docker compose up --build backend        # run the backend / registry  → :4000
 docker compose up --build contributor    # share THIS machine's compute
-docker compose up --build web            # static SPA behind nginx      → :3000
+docker compose --env-file web/.env up --build web   # static SPA behind nginx → :3000
 docker compose run  --rm   buyer         # one-shot autonomous buyer
 ```
 
-The `web` image bakes `NEXT_PUBLIC_*` in at build time from `.env` (build args), so set
-`NEXT_PUBLIC_REGISTRY_URL` to your backend before `docker compose build web`.
+The `web` image bakes `NEXT_PUBLIC_*` in at build time (build args). Compose interpolates them from
+`--env-file web/.env` (or the shell), so pass `--env-file web/.env` when building the web image.
 
 The contributor doesn't run a Docker of its own: it mounts the host Docker socket and launches each
 rented sandbox as a sibling container on the host daemon, so there's nothing extra to install.
@@ -128,9 +136,10 @@ Drop `web/out` on Vercel / Netlify / Cloudflare Pages / nginx.
 
 ## Configuration
 
-All Node services read the repo-root `.env` (and each app's own `.env`, which overrides it); inline
-`FOO=bar npm run …` overrides both. The web app reads `web/.env` (`NEXT_PUBLIC_*` only, baked in at
-build time). See `.env.example` and `web/.env.example` for every variable.
+There is no root `.env` — each app reads its own: `backend/.env`, `web/.env`, `contributor/.env`,
+`example-buyer/.env`. Inline `FOO=bar npm run …` still overrides. The web app's `NEXT_PUBLIC_*` (plus
+`MAINNET`) are baked in at build time. See each `<app>/.env.example` for its variables; flip
+`MAINNET=true` (backend, web, buyer) to target mainnet-beta instead of devnet.
 
 ## Demo script (the money shot)
 

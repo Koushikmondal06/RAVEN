@@ -1,12 +1,12 @@
 services:
   backend:
     build: { context: ., dockerfile: backend/Dockerfile }
-    env_file: .env
+    env_file: backend/.env
     ports: ['4000:4000']
 
   contributor:
     build: { context: ., dockerfile: contributor/Dockerfile }
-    env_file: .env # needs RAVEN_KEY (from the /contributor page) + REGISTRY_URL
+    env_file: contributor/.env # needs RAVEN_KEY (from the /contributor page) + REGISTRY_URL
     # Sandboxes run as sibling containers on the host daemon — nothing extra to install.
     volumes: ['/var/run/docker.sock:/var/run/docker.sock']
     # Only needed for TUNNEL_MODE=local (and broken on Docker Desktop — run natively there instead).
@@ -16,7 +16,8 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
-      # NEXT_PUBLIC_* are baked in at build time — set them in .env before building.
+      # NEXT_PUBLIC_* are baked in at build time. These interpolate from the shell / --env-file, so
+      # for a custom build: docker compose --env-file web/.env build web
       args:
         NEXT_PUBLIC_REGISTRY_URL: ${NEXT_PUBLIC_REGISTRY_URL:-http://localhost:4000}
         NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.devnet.solana.com}
@@ -26,4 +27,4 @@ services:
 
   buyer:
     build: { context: ., dockerfile: example-buyer/Dockerfile }
-    env_file: .env
+    env_file: example-buyer/.env
