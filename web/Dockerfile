@@ -18,7 +18,9 @@ COPY web/ web/
 RUN cd web && npm run build
 
 FROM nginx:alpine
-# SPA fallback: every route serves index.html.
-RUN printf 'server{listen 80;root /usr/share/nginx/html;location /{try_files $uri $uri.html /index.html;}}' > /etc/nginx/conf.d/default.conf
+# Static export: a route like /contributor emits BOTH contributor.html (the page) and a contributor/
+# dir (RSC segment .txt files). Try $uri.html BEFORE $uri so /contributor serves contributor.html
+# instead of matching the directory and falling through to the root index.html.
+RUN printf 'server{listen 80;root /usr/share/nginx/html;location /{try_files $uri.html $uri $uri/index.html /index.html;}}' > /etc/nginx/conf.d/default.conf
 COPY --from=build /app/web/out /usr/share/nginx/html
 EXPOSE 80

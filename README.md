@@ -49,7 +49,7 @@ flowchart LR
 | Folder | What it is |
 |---|---|
 | `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, the isolation-tier gate (`minIsolation`), lease lifecycle + billing watchdog, egress-abuse suspension. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
-| `contributor/` | Runs on each shared machine. `RAVEN_KEY` bearer only (no wallet). A pluggable `SandboxBackend` (`src/sandbox/`, selected by `SANDBOX_BACKEND`) creates each lease — Docker container, gVisor, or Firecracker microVM — over a bore tunnel; a per-lease nftables firewall (`src/net/`) filters egress; a reaper destroys orphans; a local kill switch tears everything down. |
+| `contributor/` | Runs on each shared machine. `RAVEN_KEY` bearer only (no wallet). A pluggable `SandboxBackend` (`src/sandbox/`, selected by `SANDBOX_BACKEND`) creates each lease — Docker container, gVisor, or Firecracker microVM — over a bore tunnel; a per-lease nftables firewall (`src/net/`) filters egress; a reaper destroys orphans; a local kill switch tears everything down. **Setup guide: [contributor/README.md](contributor/README.md).** |
 | `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack): a Buyer dashboard (`/`, with tier badges + a minimum-isolation selector + an SSH-key field) and a "Become a Contributor" page (`/contributor`). |
 | `example-buyer/` | The buyer flow with no human: an agent that generates an ephemeral SSH keypair, signs in, tops up, requests the strongest tier (with explicit fallback), SSHes in with key auth, then releases. |
 
@@ -79,6 +79,9 @@ register rather than downgrading.
 | `container` | `docker` | shared kernel, namespaces only | nothing (default) |
 | `usermode-kernel` | `gvisor` | syscalls intercepted in userspace (runsc) | `runsc` installed |
 | `microvm` | `kata-fc` / `firecracker` | separate guest kernel, KVM | `/dev/kvm`, nested virt |
+
+**Contributing a machine? → [contributor/README.md](contributor/README.md)** is the full
+step-by-step setup guide (get your key, pick a tier, run it, verify).
 
 **Easiest real-isolation contributor — gVisor, no KVM:** one command sets it up, and it gives each
 lease a virtualized kernel (runsc) on any ordinary VM:
