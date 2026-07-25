@@ -6,6 +6,54 @@ A contributor shares a real machine; a buyer (a human in the web app, or an auto
 it, gets an `ssh` command into a hardened throwaway container, and is billed for the exact seconds
 used. Solana devnet, custodial balances, no on-chain program required.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph buyers [Buyers]
+        web["web/ · Next.js static SPA<br/>(wallet-standard + @solana/kit)"]
+        agent["example-buyer/ · headless agent<br/>(same REST API + ssh2)"]
+    end
+
+    registry["backend/ · registry (Express :4000)<br/>nodes · leases · sessions · nonces — in memory<br/>watchdog + billing"]
+
+    subgraph contribs [Contributors]
+        contributor["contributor/ · daemon<br/>heartbeat poll · docker · bore tunnel"]
+        sandbox["sandbox · throwaway root container<br/>capped CPU/RAM, no mounts, per-lease SSH pw"]
+    end
+
+    mongo[("MongoDB<br/>users · deposits · charges · payouts")]
+    solana["Solana devnet<br/>top-up confirm · contributor payout"]
+
+    web -- "REST: sign-in, top-up, rent, release" --> registry
+    agent -- "REST + ssh into the sandbox" --> registry
+    registry -- "money state only" --> mongo
+    registry -- "confirm deposit · send payout" --> solana
+    registry -- "start/stop via heartbeat reply" --> contributor
+    contributor -- "register · ready · heartbeat" --> registry
+    contributor -- "docker run / rm (host socket)" --> sandbox
+    sandbox -- "bore outbound tunnel" --> contributor
+    agent -. "ssh root@bore -p …" .-> sandbox
+    web -. "copyable ssh command" .-> sandbox
+
+    shared["shared/ · wire types imported by all four"]
+```
+
+**Pieces** — each is a `cd`-able folder; `shared/` holds the types they all import.
+
+| Folder | What it is |
+|---|---|
+| `backend/` | The registry: REST API, wallet sign-in, deposit/payout on Solana, lease lifecycle + billing watchdog. Nodes and leases live in memory; only money state touches MongoDB. |
+| `contributor/` | Runs on each shared machine. Registers, heartbeats, and on command launches a sandbox as a sibling container on the host Docker daemon, exposed over a bore tunnel. |
+| `web/` | Next.js App Router exported as a static SPA — connect wallet, sign in, top up, Explore, Rent, Release. |
+| `example-buyer/` | The same flow with no human: an agent that signs in, tops up, rents the cheapest node, SSHes in to run a job, then releases. |
+
+**Key flows**
+- **Sign in** — wallet signs a single-use nonce → registry mints a session token; every balance-spending call needs it.
+- **Top up** — wallet sends SOL to `PLATFORM_PAYTO`; registry confirms the tx on-chain (depositor signed, lamports landed) and credits MongoDB, idempotent by signature.
+- **Rent** — `POST /leases` queues a `start` command; the contributor's next heartbeat picks it up, runs the container + bore tunnel, posts `ready`; the lease goes `active` with an `ssh` command.
+- **Release / exhaust** — registry bills the exact seconds used (charge in MongoDB), pays the contributor on-chain, and sends a `stop` command that destroys the container.
+
 ## Run it
 
 ```bash
@@ -15,7 +63,7 @@ npm install
 npm run backend                    # 1. the registry            → :4000
 npm run contributor                # 2. share THIS machine's compute
 
-# 3a. web UI                                                    → http://localhost:5173
+# 3a. web UI                                                    → http://localhost:3000
 cp web/.env.example web/.env       # set NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
 npm run web                        # connect wallet → Sign in → Top up → Rent → copy the ssh command
 
@@ -35,7 +83,7 @@ contributor runs on each machine sharing compute and points at that backend via 
 cp .env.example .env                     # then set REGISTRY_URL to your backend
 docker compose up --build backend        # run the backend / registry  → :4000
 docker compose up --build contributor    # share THIS machine's compute
-docker compose up --build web            # static SPA behind nginx      → :5173
+docker compose up --build web            # static SPA behind nginx      → :3000
 docker compose run  --rm   buyer         # one-shot autonomous buyer
 ```
 
@@ -72,7 +120,7 @@ build time). See `.env.example` and `web/.env.example` for every variable.
 ## Demo script (the money shot)
 
 1. Start the registry and one contributor (a real machine sharing CPU/RAM).
-2. Show the node appear in **Explore** at http://localhost:5173.
+2. Show the node appear in **Explore** at http://localhost:3000.
 3. **Human path:** connect wallet (devnet) → Sign in → Top up (approve one SOL deposit) → watch the
    balance appear → click **Rent** → a copyable `ssh root@… -p …` command appears (password = your
    wallet address) with a balance-driven countdown. `ssh` in. **Release** (or letting the balance hit
