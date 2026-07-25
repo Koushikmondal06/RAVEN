@@ -4,6 +4,7 @@ import os from 'node:os';
 import type { EgressPolicy, NodeCommand } from '../../shared/types.js';
 import { type SandboxBackend, type SandboxHandle, selectBackend } from './sandbox/index.js';
 import { logCapabilities } from './sandbox/probe.js';
+import { reap } from './sandbox/reaper.js';
 
 // The daemon needs exactly two things: which registry to call, and the bearer key that identifies it.
 // No wallet, no keypair, no payout address ever runs on this box — the backend resolves RAVEN_KEY to a
@@ -18,6 +19,7 @@ const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1))
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
 const SANDBOX_BACKEND = process.env.SANDBOX_BACKEND ?? 'docker';
 const EGRESS_MODE = (process.env.EGRESS_MODE ?? 'open') as EgressPolicy['mode']; // enforced in phase 6
+const REAP_INTERVAL_MS = Number(process.env.REAP_INTERVAL_MS ?? 60_000);
 const IMAGE = 'raven-sandbox';
 
 if (!RAVEN_KEY) {
@@ -87,6 +89,19 @@ console.log(
   `registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour ` +
     `(${backend.tier} via ${backend.name}, egress ${EGRESS_MODE})`,
 );
+
+// Reap orphans left by a previous daemon run, then on a timer — leases are in-memory, so a sandbox
+// the registry forgot (restart, crash) would otherwise run forever.
+async function reapNow() {
+  try {
+    const gone = await reap(backend, new Set(handles.keys()));
+    if (gone.length) console.log(`reaped ${gone.length} orphan sandbox(es): ${gone.join(', ')}`);
+  } catch (e) {
+    console.error('reap failed:', (e as Error).message);
+  }
+}
+await reapNow();
+setInterval(reapNow, REAP_INTERVAL_MS);
 
 setInterval(async () => {
   try {

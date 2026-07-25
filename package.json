@@ -8,7 +8,7 @@
     "contributor": "npm run start -w contributor",
     "client": "npm run start -w example-buyer",
     "web": "npm run dev -w web",
-    "test": "npm run test -w backend",
+    "test": "npm run test -w backend && npm run test -w contributor",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit"
   },
   "devDependencies": {
