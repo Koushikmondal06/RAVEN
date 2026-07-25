@@ -34,7 +34,7 @@ import {
   setUserRole,
   takeNonce,
 } from './db.js';
-import { PLATFORM_PAYTO, confirmDeposit, payoutSol } from './solana.js';
+import { DepositNotConfirmedError, PLATFORM_PAYTO, confirmDeposit, payoutSol } from './solana.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
 const METER_INTERVAL_MS = Number(process.env.METER_INTERVAL_MS ?? 10_000);
@@ -211,9 +211,19 @@ app.post('/wallet/topup', requireSession, asyncRoute(async (req, res) => {
   const { signature } = req.body ?? {};
   if (!signature) return res.status(400).json({ error: 'signature required' });
   const address = sessionAddress(req);
-  const amount = await confirmDeposit(signature, address);
-  const balance = await credit(signature, address, amount);
-  res.json({ creditedLamports: amount.toString(), balanceLamports: balance.toString() });
+  try {
+    const amount = await confirmDeposit(signature, address);
+    // credit() is idempotent by signature, so a retried deposit can never double-credit.
+    const balance = await credit(signature, address, amount);
+    res.json({ creditedLamports: amount.toString(), balanceLamports: balance.toString() });
+  } catch (e) {
+    // 409, not 400: the deposit is real and the client SHOULD send this signature again. A generic
+    // error here is how a paid-for top-up silently goes missing.
+    if (e instanceof DepositNotConfirmedError) {
+      return res.status(409).json({ error: e.message, retryable: true });
+    }
+    throw e;
+  }
 }));
 
 // ---------- contributor dashboard (wallet session, not the daemon's RAVEN_KEY) ----------

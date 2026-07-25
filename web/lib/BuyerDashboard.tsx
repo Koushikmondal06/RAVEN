@@ -23,6 +23,12 @@ import { Stats } from './Dashboard';
 const rpc = createSolanaRpc(RPC_URL);
 const chain = `solana:${CHAIN}` as const;
 
+// A deposit is real the moment the wallet sends it, but it is only *credited* once the registry has
+// seen it confirmed. Between those two points the SOL has left the buyer's wallet and their balance
+// still reads zero — so park the signature here and retry it until the credit lands, including after
+// a reload or a closed tab. credit() is idempotent by signature, so retrying is free.
+const PENDING_KEY = 'raven:pending-topup';
+
 export function BuyerDashboard({ auth }: { auth: Auth }) {
   const signer = useWalletAccountTransactionSendingSigner(auth.account, chain);
   const [me, setMe] = useState<BuyerSummary | null>(null);
@@ -32,6 +38,25 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
 
   const refresh = useCallback(() => api<BuyerSummary>('/wallet').then(setMe), []);
 
+  /** Credits a sent deposit. Keeps the signature parked while the chain hasn't confirmed it yet. */
+  const claim = useCallback(
+    async (txid: string) => {
+      localStorage.setItem(PENDING_KEY, txid);
+      try {
+        await api('/wallet/topup', { body: { signature: txid } });
+        localStorage.removeItem(PENDING_KEY);
+      } catch (e) {
+        // Only "not confirmed yet" is worth retrying; anything else (wrong signer, failed tx) would
+        // retry forever, so drop it and surface the reason.
+        if (!/not confirmed yet/.test((e as Error).message)) localStorage.removeItem(PENDING_KEY);
+        throw e;
+      } finally {
+        await refresh().catch(() => {});
+      }
+    },
+    [refresh],
+  );
+
   // Poll: lease time and balance both move while a sandbox is running.
   useEffect(() => {
     void refresh().catch(() => {});
@@ -39,9 +64,22 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
     return () => clearInterval(id);
   }, [refresh]);
 
+  // Recover a deposit that was sent but never credited (tab closed, network dropped, registry down).
+  useEffect(() => {
+    const pending = localStorage.getItem(PENDING_KEY);
+    if (!pending) return;
+    setBusy('Recovering an earlier deposit…');
+    void claim(pending)
+      .catch((e) => setError(`earlier deposit not credited yet: ${(e as Error).message}`))
+      .finally(() => setBusy(''));
+  }, [claim]);
+
   const topUp = async () => {
     setError('');
-    setBusy('Confirming deposit…');
+    // BigInt(NaN) throws an unreadable RangeError deep in the transaction builder, so reject junk here.
+    const sol = Number(amount);
+    if (!Number.isFinite(sol) || sol <= 0) return setError('enter an amount greater than zero');
+    setBusy('Approve in your wallet…');
     try {
       const { value: blockhash } = await rpc.getLatestBlockhash().send();
       const message = pipe(
@@ -53,15 +91,15 @@ export function BuyerDashboard({ auth }: { auth: Auth }) {
             getTransferSolInstruction({
               source: signer,
               destination: address(me?.payTo ?? ''),
-              amount: lamports(BigInt(Math.round(Number(amount) * Number(LAMPORTS_PER_SOL)))),
+              amount: lamports(BigInt(Math.round(sol * Number(LAMPORTS_PER_SOL)))),
             }),
             m,
           ),
       );
       // The wallet signs and sends the real transfer; we only get the resulting signature back.
       const txid = getBase58Decoder().decode(await signAndSendTransactionMessageWithSigners(message));
-      await api('/wallet/topup', { body: { signature: txid } });
-      await refresh();
+      setBusy('Confirming on-chain…');
+      await claim(txid);
     } catch (e) {
       setError((e as Error).message);
     } finally {

@@ -6,7 +6,7 @@ import type { Auth } from './AuthPanel';
 import { api, clock, sol } from './api';
 import { CopyButton, Stats } from './Dashboard';
 
-const REPO = process.env.NEXT_PUBLIC_REPO_URL ?? 'https://github.com/your-org/RAVEN.git';
+const IMAGE = process.env.NEXT_PUBLIC_CONTRIBUTOR_IMAGE ?? 'ghcr.io/himanshum685/raven-contributor:sha-e51f5c3';
 const RAW_REGISTRY = process.env.NEXT_PUBLIC_REGISTRY_URL || 'http://localhost:4000';
 
 /** `/api` is the same-origin proxy path — meaningless to a daemon on someone else's box, so expand it
@@ -171,19 +171,24 @@ export function ContributorDashboard({ auth }: { auth: Auth }) {
 }
 
 function RunDaemon({ apiKey }: { apiKey: string }) {
-  // Anywhere Docker runs. The daemon launches each lease as a sibling container on the host daemon,
-  // which is what the socket mount is for.
+  // Published image: nothing to clone, nothing to build. The socket mount lets the daemon start each
+  // lease as a sibling container on the host's Docker daemon.
   const registry = registryUrl();
-  const cmd = `git clone ${REPO} raven && cd raven
-printf 'RAVEN_KEY=%s\nREGISTRY_URL=%s\n' ${apiKey} ${registry} > contributor/.env
-docker compose up -d --build contributor`;
+  const cmd = `docker pull ${IMAGE}
+
+docker run -d --name raven-contributor --restart unless-stopped \\
+  -e RAVEN_KEY=${apiKey} \\
+  -e REGISTRY_URL=${registry} \\
+  -v /var/run/docker.sock:/var/run/docker.sock \\
+  ${IMAGE}`;
 
   return (
     <section>
       <h2>Run the daemon</h2>
       <p className="sub">
-        Anywhere Docker runs. Your node appears in Explore within ~10 seconds; `docker compose logs -f
-        contributor` follows it.
+        Anywhere Docker runs — nothing to clone, nothing to install. Your node appears in Explore
+        within ~10 seconds; follow it with{' '}
+        <code style={{ display: 'inline', padding: '0.1rem 0.3rem' }}>docker logs -f raven-contributor</code>.
       </p>
       <code>{cmd}</code>
       <div className="row" style={{ marginTop: '0.75rem' }}>

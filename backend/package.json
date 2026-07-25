@@ -5,7 +5,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "test": "tsx src/billing.ts"
+    "test": "tsx src/billing.ts && tsx src/solana.ts"
   },
   "dependencies": {
     "@solana-program/system": "^0.13.0",
