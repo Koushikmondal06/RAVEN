@@ -50,7 +50,7 @@ flowchart LR
 |---|---|
 | `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, the isolation-tier gate (`minIsolation`), lease lifecycle + billing watchdog, egress-abuse suspension. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
 | `contributor/` | Runs on each shared machine. `RAVEN_KEY` bearer only (no wallet). A pluggable `SandboxBackend` (`src/sandbox/`, selected by `SANDBOX_BACKEND`) creates each lease — Docker container, gVisor, or Firecracker microVM — over a bore tunnel; a per-lease nftables firewall (`src/net/`) filters egress; a reaper destroys orphans; a local kill switch tears everything down. **Setup guide: [contributor/README.md](contributor/README.md).** |
-| `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack): a Buyer dashboard (`/`, with tier badges + a minimum-isolation selector + an SSH-key field) and a "Become a Contributor" page (`/contributor`). |
+| `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack): a Buyer dashboard (`/`, with tier badges, an SSH-key field, and a fixed `usermode-kernel` minimum — weaker nodes show "Below min") and a "Become a Contributor" page (`/contributor`). |
 | `example-buyer/` | The buyer flow with no human: an agent that generates an ephemeral SSH keypair, signs in, tops up, requests the strongest tier (with explicit fallback), SSHes in with key auth, then releases. |
 
 **Auth (both roles, same flow)**
@@ -74,25 +74,29 @@ buyer sets a minimum on the lease and the registry never places below it. A node
 tier it can't deliver — if the configured backend is unavailable at startup, the daemon refuses to
 register rather than downgrading.
 
-| Tier | `SANDBOX_BACKEND` | Boundary | Needs |
-|---|---|---|---|
-| `container` | `docker` | shared kernel, namespaces only | nothing (default) |
-| `usermode-kernel` | `gvisor` | syscalls intercepted in userspace (runsc) | `runsc` installed |
-| `microvm` | `kata-fc` / `firecracker` | separate guest kernel, KVM | `/dev/kvm`, nested virt |
+| Tier | `SANDBOX_BACKEND` | Boundary | Needs | Rentable? |
+|---|---|---|---|---|
+| `container` | `docker` | shared kernel, namespaces only | nothing | ❌ below market minimum |
+| `usermode-kernel` | `gvisor` | syscalls intercepted in userspace (runsc) | `runsc` (one script) | ✅ recommended |
+| `microvm` | `kata-fc` / `firecracker` | separate guest kernel, KVM | `/dev/kvm`, nested virt | ✅ |
 
-**Contributing a machine? → [contributor/README.md](contributor/README.md)** is the full
-step-by-step setup guide (get your key, pick a tier, run it, verify).
+The web marketplace's minimum is `usermode-kernel`, so **a rentable node must run `gvisor` or a
+microVM** — a plain `container` node registers fine but every node row shows *"Below min"* and can't
+be rented. `SANDBOX_BACKEND=gvisor` is the default in `contributor/.env.example` for that reason.
 
-**Easiest real-isolation contributor — gVisor, no KVM:** one command sets it up, and it gives each
-lease a virtualized kernel (runsc) on any ordinary VM:
+**Contributing a machine? → [contributor/README.md](contributor/README.md)** — requirements first,
+then step-by-step: get your key → set up the tier → configure → run → verify it's rentable.
+
+**Easiest real-isolation contributor — gVisor, no KVM** (one script, works on any ordinary Linux VM):
 
 ```bash
 sudo bash contributor/scripts/setup-gvisor.sh     # installs runsc, registers the Docker runtime
-SANDBOX_BACKEND=gvisor npm run contributor         # (or set it in contributor/.env and use compose)
+npm run contributor                                # contributor/.env: SANDBOX_BACKEND=gvisor
 ```
 
-See [contributor/docs/gvisor-setup.md](contributor/docs/gvisor-setup.md). The web marketplace's
-minimum is `usermode-kernel`, so a gVisor node is rentable but a plain `container` node is not.
+See [contributor/docs/gvisor-setup.md](contributor/docs/gvisor-setup.md). gVisor and microVM both
+need a **Linux host** — macOS / Colima / Windows cannot deliver either, so they're for development
+only, not for a rentable node.
 
 The `microvm` tier needs `/dev/kvm` — **bare metal or a nested-virt-capable instance**. Standard
 DigitalOcean droplets do not expose it (the registry + MongoDB can still live on DO). Run
@@ -115,9 +119,10 @@ npm run backend
 cp web/.env.example web/.env           # NEXT_PUBLIC_REGISTRY_URL (defaults to localhost:4000)
 npm run web                            # Buyer at / · "Become a Contributor" at /contributor
 
-# 3. share THIS machine's compute — get RAVEN_KEY from the /contributor page after signing in
-cp contributor/.env.example contributor/.env   # set RAVEN_KEY
-npm run contributor
+# 3. share THIS machine's compute — Linux host + gVisor, or the node won't be rentable
+sudo bash contributor/scripts/setup-gvisor.sh  # one-time: installs runsc (skip if using microVM)
+cp contributor/.env.example contributor/.env   # set RAVEN_KEY (from the /contributor page after sign-in)
+npm run contributor                            # full guide: contributor/README.md
 
 # …or the autonomous buyer agent (its own funded key — signs in, tops up, rents)
 cp example-buyer/.env.example example-buyer/.env   # set BUYER_PRIVATE_KEY
@@ -142,16 +147,21 @@ cp backend/.env.example backend/.env
 cp contributor/.env.example contributor/.env
 cp example-buyer/.env.example example-buyer/.env
 docker compose up --build backend        # run the backend / registry  → :4000
-docker compose up --build contributor    # share THIS machine's compute
+docker compose up --build contributor    # share THIS machine's compute (Linux host + runsc installed)
 docker compose --env-file web/.env up --build web   # static SPA behind nginx → :3000
 docker compose run  --rm   buyer         # one-shot autonomous buyer
 ```
+
+Run these from the **repo root** — the compose file lives there, not inside each app folder.
 
 The `web` image bakes `NEXT_PUBLIC_*` in at build time (build args). Compose interpolates them from
 `--env-file web/.env` (or the shell), so pass `--env-file web/.env` when building the web image.
 
 The contributor doesn't run a Docker of its own: it mounts the host Docker socket and launches each
-rented sandbox as a sibling container on the host daemon, so there's nothing extra to install.
+rented sandbox as a sibling container on the host daemon. That's also why `SANDBOX_BACKEND=gvisor`
+works under Compose — `runsc` lives on the host, so run `setup-gvisor.sh` there first. The socket
+mount gives the container host root, so for a real machine run the daemon natively instead
+([contributor/docs/daemon-isolation.md](contributor/docs/daemon-isolation.md)).
 
 `backend` keeps only money state in MongoDB (`MONGODB_URI`) — no local volume; set `PLATFORM_PAYTO` +
 `PLATFORM_PRIVATE_KEY` too. `contributor` needs no inbound ports in the default `TUNNEL_MODE=bore` —
@@ -186,10 +196,11 @@ unless the backend sets `ALLOW_PASSWORD_SSH=true` (off by default).
 
 ## Demo script (the money shot)
 
-1. Start the registry and one or two contributors on different tiers (e.g. one `docker`, one
-   `gvisor`).
+1. Start the registry, then two contributors on different tiers — one `gvisor` (after
+   `setup-gvisor.sh`) and one `docker`, to show the gate working in both directions.
 2. Show the nodes appear in **Explore** at http://localhost:3000 with their isolation + egress
-   badges. Set the minimum-isolation selector and watch weaker nodes disable their Rent button.
+   badges: the `gvisor` node's **Rent** button is live, the `container` node's reads **"Below min"**
+   — the registry would reject it too (409 with the tiers it *can* place on).
 3. **Human path:** connect wallet (devnet) → Sign in → Top up (approve one SOL deposit) → paste your
    SSH public key → click **Rent** → a copyable `ssh root@… -p …` command appears with a
    balance-driven countdown. `ssh -i your-key` in. **Release** (or letting the balance hit zero) bills
