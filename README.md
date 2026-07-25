@@ -11,31 +11,34 @@ used. Solana devnet, custodial balances, no on-chain program required.
 ```mermaid
 flowchart LR
     subgraph buyers [Buyers]
-        web["web/ · Next.js static SPA<br/>wallet-standard + @solana/kit"]
-        agent["example-buyer/ · headless agent<br/>(own key; same REST API + ssh2)"]
+        web["web/ · Next.js static SPA<br/>wallet sign-in · paste SSH key · min-tier"]
+        agent["example-buyer/ · headless agent<br/>(own key; generates SSH keypair)"]
     end
 
-    registry["backend/ · registry (Express :4000)<br/>nodes · leases — in memory · JWT sessions<br/>watchdog + billing"]
+    registry["backend/ · registry (Express :4000)<br/>nodes · leases — in memory · JWT sessions<br/>tier gate · watchdog · billing · abuse suspend"]
 
-    subgraph contribs [Contributors]
-        onboarding["Become a Contributor page<br/>wallet sign-in → RAVEN_KEY"]
-        contributor["contributor/ · daemon<br/>RAVEN_KEY bearer · docker · bore tunnel"]
-        sandbox["sandbox · throwaway root container<br/>capped CPU/RAM, no mounts, per-lease SSH pw"]
+    subgraph contribs [Contributor host]
+        contributor["contributor/ · daemon<br/>RAVEN_KEY bearer · reaper · kill switch"]
+        backendsel["SandboxBackend<br/>docker | gvisor | kata-fc | firecracker<br/>(probe picks + advertises the tier)"]
+        sandbox["sandbox · ephemeral, key-only SSH<br/>capped CPU/RAM/PIDs · guest TTL"]
+        egress["per-lease nftables + tc<br/>default-drop · allowlist · drop counter"]
     end
 
     mongo[("MongoDB<br/>users · deposits · charges · payouts<br/>nonces · contributors")]
     solana["Solana devnet<br/>top-up confirm · contributor payout"]
 
-    web -- "wallet sign-in, top-up, rent, release" --> registry
-    onboarding -- "wallet sign-in (role=contributor)" --> registry
-    agent -- "REST + ssh into the sandbox" --> registry
+    web -- "sign-in · top-up · rent(minIsolation, sshPubKey) · release" --> registry
+    agent -- "REST + ssh (key auth)" --> registry
     registry -- "money state, nonces, keys" --> mongo
     registry -- "confirm deposit · send payout" --> solana
     registry -- "start/stop via heartbeat reply" --> contributor
-    contributor -- "register · ready · heartbeat (RAVEN_KEY)" --> registry
-    contributor -- "docker run / rm (host socket)" --> sandbox
+    contributor -- "register(tier, egress) · ready · heartbeat(dropCounters, RAVEN_KEY)" --> registry
+    contributor --> backendsel
+    backendsel -- "create / destroy / list" --> sandbox
+    contributor -- "apply / remove rules" --> egress
+    egress -. "filters" .-> sandbox
     sandbox -- "bore outbound tunnel" --> contributor
-    agent -. "ssh root@bore -p …" .-> sandbox
+    agent -. "ssh -i key root@bore -p …" .-> sandbox
     web -. "copyable ssh command" .-> sandbox
 
     shared["shared/ · wire types imported by all"]
@@ -45,10 +48,10 @@ flowchart LR
 
 | Folder | What it is |
 |---|---|
-| `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, lease lifecycle + billing watchdog. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
-| `contributor/` | Runs on each shared machine. Authenticates with a `RAVEN_KEY` bearer only — no wallet, no keypair — and on command launches a sandbox as a sibling container on the host Docker daemon, over a bore tunnel. |
-| `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack): a Buyer dashboard (`/`) and a "Become a Contributor" page (`/contributor`). |
-| `example-buyer/` | The buyer flow with no human: an agent that holds its own key, signs in, tops up, rents the cheapest node, SSHes in to run a job, then releases. |
+| `backend/` | The registry: REST API, wallet sign-in + JWT sessions, deposit/payout on Solana, contributor-key onboarding, the isolation-tier gate (`minIsolation`), lease lifecycle + billing watchdog, egress-abuse suspension. Nodes and leases live in memory; MongoDB holds money state, nonces, and contributor keys. |
+| `contributor/` | Runs on each shared machine. `RAVEN_KEY` bearer only (no wallet). A pluggable `SandboxBackend` (`src/sandbox/`, selected by `SANDBOX_BACKEND`) creates each lease — Docker container, gVisor, or Firecracker microVM — over a bore tunnel; a per-lease nftables firewall (`src/net/`) filters egress; a reaper destroys orphans; a local kill switch tears everything down. |
+| `web/` | Next.js App Router static SPA. Both roles authenticate through a Solana wallet (wallet-standard: Phantom / Solflare / Backpack): a Buyer dashboard (`/`, with tier badges + a minimum-isolation selector + an SSH-key field) and a "Become a Contributor" page (`/contributor`). |
+| `example-buyer/` | The buyer flow with no human: an agent that generates an ephemeral SSH keypair, signs in, tops up, requests the strongest tier (with explicit fallback), SSHes in with key auth, then releases. |
 
 **Auth (both roles, same flow)**
 1. Connect Wallet (wallet-standard: Phantom / Solflare / Backpack — Solana only).
