@@ -1,5 +1,7 @@
 // NEXT_PUBLIC_* are inlined at build time — the only env visible in a static export.
-const BASE = process.env.NEXT_PUBLIC_REGISTRY_URL ?? 'http://localhost:4000';
+// Strip trailing slashes: a BASE like `https://api.example/` would make `${BASE}/auth/nonce` a
+// double-slash `//auth/nonce`, which Express 404s ("Not Found") instead of matching the route.
+const BASE = (process.env.NEXT_PUBLIC_REGISTRY_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
 
 // MAINNET=true (root .env) → mainnet-beta, else devnet. Explicit NEXT_PUBLIC_SOLANA_* still win.
 const MAINNET = process.env.NEXT_PUBLIC_MAINNET === 'true';
