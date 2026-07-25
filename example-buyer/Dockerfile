@@ -1,7 +1,8 @@
 FROM node:22-slim
 WORKDIR /app
-COPY example-buyer/package.json example-buyer/
-RUN cd example-buyer && npm install
+# Install into /app/node_modules so shared/env.ts + shared/cluster.ts resolve their deps one level up.
+COPY example-buyer/package.json ./package.json
+RUN npm install
 COPY shared/ shared/
 COPY example-buyer/ example-buyer/
 WORKDIR /app/example-buyer
