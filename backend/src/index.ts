@@ -40,7 +40,7 @@ type Lease = {
 };
 
 // In-memory on purpose: a registry restart drops live sessions (their sockets die anyway), and it
-// keeps heartbeats + the watchdog from ever touching Postgres.
+// keeps heartbeats + the watchdog from ever touching MongoDB.
 const nodes = new Map<string, Node>();
 const leases = new Map<string, Lease>();
 const queued = new Map<string, NodeCommand[]>(); // nodeId -> pending commands

@@ -9,7 +9,7 @@ used. Solana devnet, custodial balances, no on-chain program required.
 ## Run it
 
 ```bash
-cp .env.example .env               # DATABASE_URL, PLATFORM_PAYTO, PLATFORM_PRIVATE_KEY, PAYOUT_ADDRESS
+cp .env.example .env               # MONGODB_URI, PLATFORM_PAYTO, PLATFORM_PRIVATE_KEY, PAYOUT_ADDRESS
 npm install
 
 npm run backend                    # 1. the registry            → :4000
@@ -45,7 +45,7 @@ The `web` image bakes `NEXT_PUBLIC_*` in at build time from `.env` (build args),
 The contributor doesn't run a Docker of its own: it mounts the host Docker socket and launches each
 rented sandbox as a sibling container on the host daemon, so there's nothing extra to install.
 
-`backend` keeps only money state in Neon (`DATABASE_URL`) — no local volume; set `PLATFORM_PAYTO` +
+`backend` keeps only money state in MongoDB (`MONGODB_URI`) — no local volume; set `PLATFORM_PAYTO` +
 `PLATFORM_PRIVATE_KEY` too. `contributor` needs no inbound ports in the default `TUNNEL_MODE=bore` —
 each SSH sandbox dials out over bore. `network_mode: host` is only needed for `TUNNEL_MODE=local`
 (same-machine SSH), and on Docker Desktop host networking doesn't share the loopback, so for local
@@ -81,13 +81,13 @@ build time). See `.env.example` and `web/.env.example` for every variable.
    low, rents the cheapest node, runs a tiny training loop on someone else's machine, prints the
    falling loss, then releases and reports how much balance it drew down. No human clicked anything.
 5. Show `docker ps` during the lease (a hardened, mount-less container) and that it's gone after
-   release. On a devnet explorer, confirm the top-up and the payout to the contributor; in Neon, the
-   single `charges` row (with the billed seconds) and the `payouts` row.
+   release. On a devnet explorer, confirm the top-up and the payout to the contributor; in MongoDB,
+   the single `charges` doc (with the billed seconds) and the `payouts` doc.
 
 ## What's verified vs. what needs your machine
 
 Compiles + builds clean (full `npm run typecheck`, `npm test`, web production build). Requires your
-environment to run end-to-end: a Neon database (`DATABASE_URL`), a platform account
+environment to run end-to-end: a MongoDB database (`MONGODB_URI`), a platform account
 (`PLATFORM_PAYTO` + `PLATFORM_PRIVATE_KEY`), the Docker sandbox lifecycle (a running Docker daemon),
 outbound network for the bore tunnel, an SSH client, and an RPC reachable to confirm top-ups + send
 payouts (funded devnet accounts).
@@ -95,15 +95,15 @@ payouts (funded devnet accounts).
 ## Notes & limitations
 
 - **Custodial model:** top-ups pool at one platform address and balances are an off-chain ledger in
-  Neon. Top-ups are confirmed on-chain and recorded by signature (idempotent — a deposit can't credit
-  twice), and the depositor must have signed the transaction. Contributor earnings are settled
+  MongoDB. Top-ups are confirmed on-chain and recorded by signature (the `deposits._id` — idempotent,
+  a deposit can't credit twice), and the depositor must have signed the transaction. Contributor earnings are settled
   on-chain on lease end (needs `PLATFORM_PRIVATE_KEY`); if it's unset, payouts are recorded as unpaid
   (`txid` null) instead.
 - **Billing:** usage is calculated continuously but charged once, at lease end, prorated at the
   hourly rate (`elapsed/3600 × rate`) — no per-tick debits. A watchdog only checks every
   `METER_INTERVAL_MS` whether the balance is exhausted, so worst-case over-use is one tick.
 - **Nodes + leases are in-memory:** a registry restart drops live sessions (the sockets die anyway).
-  This is what keeps the DB quiet — heartbeats and the watchdog never write to Postgres.
+  This is what keeps the DB quiet — heartbeats and the watchdog never write to MongoDB.
 - **SSH auth is a per-lease password** (your wallet address) over a throwaway root container; fine
   for ephemeral compute, but it's a password, not a key — use a real key flow for anything sensitive.
 - **Auth:** spending the balance (rent, top-up, wallet read) requires a wallet session token, minted
