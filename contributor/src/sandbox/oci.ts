@@ -1,6 +1,7 @@
 /** The sandbox, end to end: image build, container run, bore tunnel, naming, teardown, listing.
  *  Every lease is a hardened, mount-less Docker container reachable over an outbound bore tunnel. */
 import { execFile } from 'node:child_process';
+import net from 'node:net';
 import os from 'node:os';
 import { promisify } from 'node:util';
 import type { SandboxHandle, SandboxSpec } from './types.js';
@@ -70,7 +71,19 @@ export async function boreTunnel(cfg: OciConfig, leaseId: string): Promise<{ hos
   for (let i = 0; i < 30; i++) {
     const { stdout, stderr } = await run('docker', ['logs', tunnelBox(leaseId)]);
     const match = `${stdout}${stderr}`.match(/listening at \S+?:(\d+)/);
-    if (match) return { host: cfg.boreServer, port: Number(match[1]) };
+    if (match) {
+      const port = Number(match[1]);
+      // "listening" only means the relay assigned a port — not that traffic survives the round trip.
+      // Prove it end to end before the lease is advertised, or a relay that drops the tunnel hands the
+      // buyer an address that closes every connection while everything here still looks healthy.
+      if (!(await reachesSshd(cfg.boreServer, port))) {
+        throw new Error(
+          `tunnel to ${cfg.boreServer}:${port} opened but does not reach sshd — the relay accepted the ` +
+            `port and dropped the traffic. ${cfg.boreServer === 'bore.pub' ? 'This is public bore.pub; run your own relay (docker compose up relay) and set BORE_SERVER on the registry.' : 'Check that the relay host allows its port range inbound.'}`,
+        );
+      }
+      return { host: cfg.boreServer, port };
+    }
     // A wrong/missing secret makes bore exit immediately — say so instead of timing out silently.
     if (/(unauthorized|invalid secret|incorrect secret)/i.test(`${stdout}${stderr}`)) {
       throw new Error(`bore rejected the tunnel to ${cfg.boreServer} — check BORE_SECRET on the registry`);
@@ -78,6 +91,26 @@ export async function boreTunnel(cfg: OciConfig, leaseId: string): Promise<{ hos
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error(`bore never reported a remote port (relay ${cfg.boreServer})`);
+}
+
+/** Dials the public address a buyer would use and waits for sshd's banner. Retries: the relay needs a
+ *  moment to wire a freshly assigned port. */
+async function reachesSshd(host: string, port: number, attempts = 6): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    const banner = await new Promise<boolean>((resolve) => {
+      const sock = net.connect({ host, port });
+      const done = (ok: boolean) => {
+        sock.destroy();
+        resolve(ok);
+      };
+      sock.setTimeout(5000, () => done(false));
+      sock.on('error', () => done(false));
+      sock.on('data', (b) => done(b.toString('utf8', 0, 8).startsWith('SSH-2.0')));
+    });
+    if (banner) return true;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return false;
 }
 
 /**

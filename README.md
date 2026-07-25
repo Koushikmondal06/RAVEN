@@ -132,6 +132,7 @@ cp backend/.env.example backend/.env
 cp contributor/.env.example contributor/.env
 cp example-buyer/.env.example example-buyer/.env
 docker compose up -d --build backend         # the registry            → :4000
+docker compose up -d relay                   # tunnel relay for leases → :7835 + port range
 docker compose --env-file web/.env up -d --build web   # static SPA behind nginx → :3000
 docker compose up -d --build contributor     # share THIS machine's compute
 docker compose run  --rm   buyer             # one-shot autonomous buyer
@@ -149,12 +150,26 @@ static, so `http://localhost:4000` means the *visitor's* machine, and any plain-
 blocked as mixed content on an `https` page — the requests never leave the browser, which is why the
 backend log stays silent. Only set an absolute URL when the registry has its own https hostname.
 
-**Tunnels go through the public `bore.pub` by default** — nothing to run and no ports to open on
-either side, which is why it's the default. The tradeoff is that every buyer's SSH session transits a
-third party, and `bore.pub` offers no uptime guarantee. To run your own relay instead, start a
-`bore server` on a reachable host and set `BORE_SERVER` + `BORE_SECRET` in `backend/.env`: the
-registry hands both to each daemon over its authenticated register call, so contributors configure
-nothing and the secret never reaches the web bundle.
+**Run the `relay` next to the registry.** A lease lives on a contributor's machine, which usually has
+no inbound ports — so the daemon dials *out* to a relay and buyers SSH to a port on that relay. The
+`relay` service is a `bore server` deployed alongside the backend and configured from the same
+`backend/.env`:
+
+```ini
+BORE_SERVER=raven.007575.xyz    # this host's public name — what buyers will SSH to
+BORE_SECRET=<openssl rand -hex 32>
+```
+
+The registry hands both to each daemon over its authenticated register call, so **contributors
+configure no tunnel at all** and the secret never reaches the web bundle. Open TCP `7835` (the
+contributors' control connection) plus `BORE_MIN_PORT`–`BORE_MAX_PORT` (one port per live lease, so
+that range caps concurrent leases).
+
+Leave `BORE_SERVER` unset and leases fall back to the **public bore.pub**: nothing to run, but every
+buyer's SSH transits a third party with no uptime guarantee — when it drops a tunnel the buyer gets an
+address that closes every connection. The daemon now dials the public address itself and waits for
+sshd's banner before reporting a lease ready, so that failure surfaces as a lease error naming the
+relay rather than a working-looking lease nobody can reach.
 
 **The `contributor` service mounts the Docker socket** so the daemon can start each lease as a sibling
 container on the host's Docker daemon rather than nested inside its own. That mount is equivalent to

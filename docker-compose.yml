@@ -7,6 +7,23 @@ services:
     env_file: backend/.env
     ports: ['4000:4000']
 
+  # The tunnel relay, deployed alongside the registry rather than as separate infrastructure. Buyers
+  # SSH to a port on THIS host; each contributor's daemon dials out to 7835 and is handed one. That is
+  # what lets a contributor run behind NAT with no inbound ports at all.
+  #
+  # It reads BORE_SECRET from the same backend/.env the registry does, so the two always agree — the
+  # registry hands the server+secret to each daemon on its authenticated register call. Set
+  # BORE_SERVER in backend/.env to this host's public name, or leases fall back to public bore.pub.
+  #
+  # network_mode: host because the relay allocates a port per live lease; publishing the range through
+  # Docker's proxy would mean one userland proxy process per port.
+  relay:
+    image: ekzhang/bore
+    env_file: backend/.env
+    command: server --min-port ${BORE_MIN_PORT:-49152} --max-port ${BORE_MAX_PORT:-49215}
+    network_mode: host
+    restart: unless-stopped
+
   web:
     build:
       context: .
