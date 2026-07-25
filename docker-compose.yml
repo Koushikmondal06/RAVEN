@@ -1,17 +1,15 @@
 services:
+  # compose validates EVERY service's env_file at load, even ones you don't start. On Compose v2 you
+  # could mark these `required: false`; on v1 they must exist, so create all three once:
+  #   for d in backend contributor example-buyer; do cp $d/.env.example $d/.env; done
   backend:
     build: { context: ., dockerfile: backend/Dockerfile }
-    # required:false → running one service doesn't demand the others' .env exist.
-    env_file:
-      - path: backend/.env
-        required: false
+    env_file: backend/.env
     ports: ['4000:4000']
 
   contributor:
     build: { context: ., dockerfile: contributor/Dockerfile }
-    env_file: # needs RAVEN_KEY (from the /contributor page) + REGISTRY_URL
-      - path: contributor/.env
-        required: false
+    env_file: contributor/.env # needs RAVEN_KEY (from the /contributor page) + REGISTRY_URL
     # Sandboxes run as sibling containers on the host daemon — nothing extra to install.
     volumes: ['/var/run/docker.sock:/var/run/docker.sock']
     # Only needed for TUNNEL_MODE=local (and broken on Docker Desktop — run natively there instead).
@@ -32,6 +30,4 @@ services:
 
   buyer:
     build: { context: ., dockerfile: example-buyer/Dockerfile }
-    env_file:
-      - path: example-buyer/.env
-        required: false
+    env_file: example-buyer/.env
