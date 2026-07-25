@@ -839,6 +839,151 @@ code.inline {
   }
 }
 
+/* ── View-switch page transition ─────────────────────────────────────────── */
+
+/* The wrapper that receives `.vt-exiting` / `.vt-entering` classes. */
+.view-transition {
+  position: relative;
+}
+
+/* Exit: content dissolves with a brutalist clip-path shutter sweep. */
+.view-transition.vt-exiting {
+  animation: vt-exit 320ms cubic-bezier(0.77, 0, 0.175, 1) forwards;
+}
+
+/* Enter: new content glitches in from a thin strip expanding outward. */
+.view-transition.vt-entering {
+  animation: vt-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes vt-exit {
+  0% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    filter: none;
+  }
+  40% {
+    opacity: 0.7;
+    clip-path: inset(0 0 0 0);
+    filter: blur(1px) brightness(1.4);
+  }
+  70% {
+    opacity: 0.3;
+    clip-path: inset(10% 0 10% 0);
+    filter: blur(2px) brightness(1.8);
+  }
+  100% {
+    opacity: 0;
+    clip-path: inset(50% 0 50% 0);
+    filter: blur(4px) brightness(2);
+  }
+}
+
+@keyframes vt-enter {
+  0% {
+    opacity: 0;
+    clip-path: inset(48% 0 48% 0);
+    transform: scaleY(0.96);
+    filter: blur(3px) brightness(2);
+  }
+  30% {
+    opacity: 0.6;
+    clip-path: inset(15% 0 15% 0);
+    transform: scaleY(0.99);
+    filter: blur(1px) brightness(1.4);
+  }
+  60% {
+    opacity: 0.9;
+    clip-path: inset(4% 0 4% 0);
+    transform: scaleY(1);
+    filter: blur(0.5px) brightness(1.1);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: scaleY(1);
+    filter: none;
+  }
+}
+
+/* A full-screen flash that fires once at the transition midpoint — the CRT "channel switch". */
+.vt-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background: var(--primary);
+  opacity: 0;
+}
+.vt-flash.active {
+  animation: vt-flash-pulse 260ms ease-out forwards;
+}
+@keyframes vt-flash-pulse {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 0.05;
+  }
+  50% {
+    opacity: 0.15;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* A horizontal glitch line that sweeps across during the transition. */
+.vt-glitch-line {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 101;
+  pointer-events: none;
+  background: var(--primary);
+  opacity: 0;
+  box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.4);
+}
+.vt-glitch-line.active {
+  animation: vt-sweep 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes vt-sweep {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-transition.vt-exiting,
+  .view-transition.vt-entering {
+    animation: none !important;
+    opacity: 1 !important;
+    clip-path: none !important;
+    filter: none !important;
+    transform: none !important;
+  }
+  .vt-flash.active,
+  .vt-glitch-line.active {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
 /* ── Breakpoints ─────────────────────────────────────────────────────────── */
 
 @media (min-width: 768px) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useEffect, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 import type { NodeInfo } from '../../shared/types';
 import { type Auth, AuthPanel } from './AuthPanel';
 import { BuyerDashboard, Explore } from './BuyerDashboard';
@@ -8,6 +8,7 @@ import { ContributorDashboard } from './ContributorDashboard';
 import { KV, TopNav } from './Shell';
 import { api, sol } from './api';
 import { useScrollReveal, useScrollRevealChildren } from './useScrollReveal';
+import { useViewTransition, EXIT_MS } from './useViewTransition';
 
 export type View = 'buyer' | 'contributor';
 
@@ -27,24 +28,56 @@ function useNodes() {
 /** One wallet can be both, so the switch only changes which dashboard is on screen — the session
  *  token is role-agnostic and survives the flip, no second signature. */
 export function Dashboard({ initialView }: { initialView: View }) {
-  const [view, setView] = useState<View>(initialView);
+  const { displayView, phase, requestView } = useViewTransition(initialView);
   const nodes = useNodes();
+
+  // Flash + glitch-line fire at the transition midpoint (when the exit finishes).
+  const [flash, setFlash] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleViewChange = useCallback(
+    (v: View) => {
+      if (v === displayView && phase === 'idle') return;
+      requestView(v);
+
+      // Fire the flash/glitch overlays when the exit animation is ~80% done.
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => {
+        setFlash(true);
+        // Remove after the flash animation completes so it can re-fire.
+        setTimeout(() => setFlash(false), 400);
+      }, EXIT_MS * 0.75);
+    },
+    [displayView, phase, requestView],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
+
+  const vtClass = phase === 'exiting' ? 'vt-exiting' : phase === 'entering' ? 'vt-entering' : '';
 
   return (
     <>
-      <TopNav view={view} onChange={setView} />
+      <TopNav view={displayView} onChange={handleViewChange} />
 
-      <main className="shell bg-grid">
-        <Hero view={view} onChange={setView} nodes={nodes} />
+      {/* Full-screen transition overlays */}
+      <div className={`vt-flash ${flash ? 'active' : ''}`} aria-hidden="true" />
+      <div className={`vt-glitch-line ${flash ? 'active' : ''}`} aria-hidden="true" />
+
+      <main className={`shell bg-grid view-transition ${vtClass}`}>
+        <Hero view={displayView} onChange={handleViewChange} nodes={nodes} />
         <StatsBand nodes={nodes} />
 
         <div className="container pad">
-          <SectionHead view={view} onChange={setView} />
+          <SectionHead view={displayView} onChange={handleViewChange} />
 
-          <AuthPanelReveal view={view} />
+          <AuthPanelReveal view={displayView} />
 
           {/* Browsable without signing in — only renting needs a session. */}
-          {view === 'buyer' && <ExploreReveal nodes={nodes} />}
+          {displayView === 'buyer' && <ExploreReveal nodes={nodes} />}
         </div>
       </main>
     </>
