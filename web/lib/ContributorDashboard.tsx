@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ContributorSummary } from '../../shared/types';
 import type { Auth } from './AuthPanel';
-import { api, clock, sol } from './api';
 import { CopyButton, Stats } from './Dashboard';
+import { KV, Panel } from './Shell';
+import { api, clock, sol } from './api';
 
 const IMAGE = process.env.NEXT_PUBLIC_CONTRIBUTOR_IMAGE ?? 'ghcr.io/himanshum685/raven-contributor:sha-e51f5c3';
 const RAW_REGISTRY = process.env.NEXT_PUBLIC_REGISTRY_URL || 'http://localhost:4000';
@@ -58,9 +59,19 @@ export function ContributorDashboard({ auth }: { auth: Auth }) {
 
   return (
     <>
-      <section>
-        <h2>Contributor dashboard</h2>
-        <p className="sub">{auth.address} — earnings settle to this address at each lease end.</p>
+      <Panel
+        title="Contributor"
+        meta={<span className="mono">{auth.address}</span>}
+        actions={
+          <div className="row">
+            <CopyButton text={auth.address} label="Copy address" className="ghost sm" />
+            <button className="ghost sm" onClick={auth.disconnect}>
+              Disconnect
+            </button>
+          </div>
+        }
+      >
+        <p className="sub">Earnings settle to this address at each lease end.</p>
         <Stats
           items={[
             {
@@ -78,98 +89,110 @@ export function ContributorDashboard({ auth }: { auth: Auth }) {
             { label: 'Nodes online', value: me ? `${online} / ${me.nodes.length}` : null },
           ]}
         />
-        <div className="row" style={{ marginTop: '1rem' }}>
-          <button className="ghost" onClick={auth.disconnect}>
-            Disconnect
-          </button>
-        </div>
-        {error && <p className="err">{error}</p>}
-      </section>
+        {error && <p className="sub err">{error}</p>}
+      </Panel>
 
-      <section>
-        <h2>
-          Contributor keys ({me?.keys.length ?? 0} / {me?.maxKeys ?? 2})
-        </h2>
-        <p className="sub">
-          The daemon's only credential. Keep it secret — anyone holding it can register nodes that pay
-          out to you. Two slots, so you can roll a key without stopping the machine you already run.
-        </p>
-        {me?.keys.length === 0 && <p className="sub">No keys yet. Create one to run the daemon.</p>}
-        <table>
-          <tbody>
-            {me?.keys.map((k) => (
-              <tr key={k.key}>
-                <td>
-                  <label className="row" style={{ gap: '0.4rem' }}>
-                    <input
-                      type="radio"
-                      style={{ width: 'auto' }}
-                      checked={selected === k.key}
-                      onChange={() => setSelected(k.key)}
-                    />
-                    <span className="mono">{k.key}</span>
-                  </label>
-                </td>
-                <td className="sub">{new Date(k.createdAt).toLocaleDateString()}</td>
-                <td>
-                  <div className="row">
-                    <CopyButton text={k.key} className="ghost" />
-                    <button
-                      className="ghost"
-                      disabled={busy}
-                      title="Revoke — daemons using this key stop being accepted"
-                      onClick={() =>
-                        void mutate(() => api(`/contributor/keys/${k.key}`, { method: 'DELETE' }))
-                      }
-                    >
-                      Revoke
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="row" style={{ marginTop: '0.75rem' }}>
+      <Panel
+        title="Contributor keys"
+        meta={`${me?.keys.length ?? 0} / ${me?.maxKeys ?? 2} slots used`}
+        actions={
           <button
+            className="sm"
             disabled={busy || !me || me.keys.length >= me.maxKeys}
             onClick={() => void mutate(() => api('/contributor/keys', { body: {} }))}
           >
-            {me && me.keys.length >= me.maxKeys ? `Key limit reached (${me.maxKeys})` : 'Create key'}
+            {me && me.keys.length >= me.maxKeys ? `Limit reached (${me.maxKeys})` : 'Create key'}
           </button>
-        </div>
-      </section>
+        }
+      >
+        <p className="sub">
+          The daemon&apos;s only credential. Keep it secret — anyone holding it can register nodes that pay
+          out to you. Two slots, so you can roll a key without stopping the machine you already run.
+        </p>
+
+        {me?.keys.length === 0 ? (
+          <p className="sub">No keys yet. Create one to run the daemon.</p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Created</th>
+                  <th className="num">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {me?.keys.map((k) => (
+                  <tr key={k.key}>
+                    <td>
+                      <label className="row" style={{ gap: 'var(--stack-sm)', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="contributor-key"
+                          checked={selected === k.key}
+                          onChange={() => setSelected(k.key)}
+                        />
+                        <span className="mono">{k.key}</span>
+                      </label>
+                    </td>
+                    <td className="dim">{new Date(k.createdAt).toLocaleDateString()}</td>
+                    <td className="num">
+                      <div className="row" style={{ justifyContent: 'flex-end' }}>
+                        <CopyButton text={k.key} className="ghost sm" />
+                        <button
+                          className="ghost sm"
+                          disabled={busy}
+                          title="Revoke — daemons using this key stop being accepted"
+                          onClick={() => void mutate(() => api(`/contributor/keys/${k.key}`, { method: 'DELETE' }))}
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
 
       {selected && <RunDaemon apiKey={selected} />}
 
       {me && me.nodes.length > 0 && (
-        <section>
-          <h2>Your nodes</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Node</th>
-                <th>CPU</th>
-                <th>RAM</th>
-                <th>SOL / hour</th>
-                <th>State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {me.nodes.map((n) => (
-                <tr key={n.id}>
-                  <td>{n.label}</td>
-                  <td>{n.cpus}</td>
-                  <td>{(n.memMb / 1024).toFixed(1)} GB</td>
-                  <td>{sol(n.rateLamportsPerHour)}</td>
-                  <td className={n.online ? 'ok' : 'sub'}>
-                    {!n.online ? 'offline' : n.busy ? 'leased' : 'idle'}
-                  </td>
+        <Panel title="Your nodes" meta={`${online} of ${me.nodes.length} online`}>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th className="num">CPU</th>
+                  <th className="num">RAM</th>
+                  <th className="num">SOL / hour</th>
+                  <th className="num">State</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {me.nodes.map((n) => (
+                  <tr key={n.id}>
+                    <td>
+                      <span className="mono">{n.label}</span>
+                    </td>
+                    <td className="num">{n.cpus}</td>
+                    <td className="num">{(n.memMb / 1024).toFixed(1)} GB</td>
+                    <td className="num">{sol(n.rateLamportsPerHour)}</td>
+                    <td className="num">
+                      <span className={`pill ${n.online && n.busy ? 'solid' : ''}`}>
+                        {!n.online ? 'offline' : n.busy ? 'leased' : 'idle'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
       )}
     </>
   );
@@ -188,22 +211,21 @@ docker run -d --name raven-contributor --restart unless-stopped \\
   ${IMAGE}`;
 
   return (
-    <section>
-      <h2>Run the daemon</h2>
+    <Panel
+      title="Run the daemon"
+      meta="Anywhere Docker runs — nothing to clone, nothing to install"
+      actions={<CopyButton text={cmd} label="Copy command" className="sm" />}
+    >
       <p className="sub">
-        Anywhere Docker runs — nothing to clone, nothing to install. Your node appears in Explore
-        within ~10 seconds; follow it with{' '}
-        <code style={{ display: 'inline', padding: '0.1rem 0.3rem' }}>docker logs -f raven-contributor</code>.
+        Your node appears in Explore within ~10 seconds; follow it with{' '}
+        <code className="inline">docker logs -f raven-contributor</code>.
       </p>
       <code>{cmd}</code>
-      <div className="row" style={{ marginTop: '0.75rem' }}>
-        <CopyButton text={cmd} label="Copy command" />
-      </div>
-      <p className="sub err" style={{ marginTop: '0.75rem' }}>
-        The daemon mounts the Docker socket to launch each lease as a sibling container, which grants
-        it root on this host. Each lease is a hardened container, but it shares your kernel — run this
-        on a machine you're willing to hand to strangers, not your laptop.
+      <p className="sub err">
+        The daemon mounts the Docker socket to launch each lease as a sibling container, which grants it
+        root on this host. Each lease is a hardened container, but it shares your kernel — run this on a
+        machine you&apos;re willing to hand to strangers, not your laptop.
       </p>
-    </section>
+    </Panel>
   );
 }

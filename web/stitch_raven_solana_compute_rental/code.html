@@ -1,0 +1,328 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>RAVEN Compute Protocol - Landing Page</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-variant": "#353434",
+                    "tertiary-container": "#e2e2e2",
+                    "inverse-on-surface": "#313030",
+                    "primary": "#ffffff",
+                    "on-surface": "#e5e2e1",
+                    "tertiary-fixed": "#e2e2e2",
+                    "on-primary-fixed-variant": "#454747",
+                    "tertiary-fixed-dim": "#c6c6c7",
+                    "on-primary-fixed": "#1a1c1c",
+                    "primary-fixed": "#e2e2e2",
+                    "on-secondary-fixed-variant": "#464747",
+                    "surface-container-low": "#1c1b1b",
+                    "inverse-primary": "#5d5f5f",
+                    "on-primary-container": "#636565",
+                    "on-primary": "#2f3131",
+                    "error": "#ffb4ab",
+                    "surface-tint": "#c6c6c7",
+                    "on-tertiary-fixed-variant": "#454747",
+                    "on-background": "#e5e2e1",
+                    "surface-container-high": "#2a2a2a",
+                    "outline-variant": "#444748",
+                    "primary-fixed-dim": "#c6c6c7",
+                    "surface-container-highest": "#353434",
+                    "on-secondary-fixed": "#1b1c1c",
+                    "secondary-fixed-dim": "#c7c6c6",
+                    "secondary": "#c7c6c6",
+                    "outline": "#8e9192",
+                    "on-error": "#690005",
+                    "background": "#141313",
+                    "surface-container-lowest": "#0e0e0e",
+                    "secondary-fixed": "#e3e2e2",
+                    "surface-container": "#201f1f",
+                    "on-error-container": "#ffdad6",
+                    "inverse-surface": "#e5e2e1",
+                    "error-container": "#93000a",
+                    "on-secondary-container": "#b5b5b5",
+                    "on-tertiary": "#2f3131",
+                    "on-surface-variant": "#c4c7c8",
+                    "surface-dim": "#141313",
+                    "on-secondary": "#303031",
+                    "surface": "#141313",
+                    "surface-bright": "#3a3939",
+                    "on-tertiary-container": "#636565",
+                    "tertiary": "#ffffff",
+                    "secondary-container": "#464747",
+                    "on-tertiary-fixed": "#1a1c1c",
+                    "primary-container": "#e2e2e2"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "24px",
+                    "margin-desktop": "48px",
+                    "stack-lg": "32px",
+                    "unit": "4px",
+                    "stack-md": "16px",
+                    "margin-mobile": "16px",
+                    "stack-sm": "8px",
+                    "container-max": "1440px"
+            },
+            "fontFamily": {
+                    "label-md": [
+                            "jetbrainsMono"
+                    ],
+                    "headline-lg-mobile": [
+                            "anybody"
+                    ],
+                    "headline-lg": [
+                            "anybody"
+                    ],
+                    "headline-md": [
+                            "anybody"
+                    ],
+                    "code-sm": [
+                            "jetbrainsMono"
+                    ],
+                    "body-lg": [
+                            "jetbrainsMono"
+                    ],
+                    "body-md": [
+                            "jetbrainsMono"
+                    ],
+                    "display-lg": [
+                            "anybody"
+                    ]
+            },
+            "fontSize": {
+                    "label-md": [
+                            "12px",
+                            {
+                                    "lineHeight": "1.0",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "headline-lg-mobile": [
+                            "32px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "fontWeight": "800"
+                            }
+                    ],
+                    "headline-lg": [
+                            "48px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "fontWeight": "800"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "code-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "body-lg": [
+                            "18px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "1.5",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "display-lg": [
+                            "80px",
+                            {
+                                    "lineHeight": "1.0",
+                                    "letterSpacing": "-0.04em",
+                                    "fontWeight": "900"
+                            }
+                    ]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        /* Custom Scanline Overlay */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(255,255,255,0.02) 50%,
+                rgba(255,255,255,0.02)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* Subtle Grid Background for main content */
+        .bg-grid-pattern {
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 48px 48px;
+        }
+
+        /* Hard Brutalist Shadows */
+        .brutalist-shadow {
+            box-shadow: 4px 4px 0px 0px rgba(255, 255, 255, 1);
+        }
+        
+        .brutalist-shadow-hover:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0px 0px rgba(255, 255, 255, 1);
+        }
+
+        .brutalist-shadow-active:active {
+            transform: translate(2px, 2px);
+            box-shadow: 0px 0px 0px 0px rgba(255, 255, 255, 1);
+        }
+    </style>
+</head>
+<body class="bg-background dark:bg-background text-on-background font-body-lg min-h-screen flex flex-col border-2 border-primary overflow-x-hidden selection:bg-primary selection:text-background relative">
+<!-- CRT Scanline Effect -->
+<div class="scanlines"></div>
+<!-- TopNavBar (JSON Injected) -->
+<nav class="bg-background dark:bg-background flex justify-between items-center px-gutter py-4 w-full sticky top-0 z-50 w-full border-b-2 border-primary shadow-[4px_4px_0px_0px_rgba(255,255,255,1)]">
+<div class="flex items-center gap-margin-desktop">
+<div class="font-display-lg text-headline-md font-black tracking-tighter text-primary dark:text-primary">
+                RAVEN
+            </div>
+<!-- Desktop Nav Links -->
+<div class="hidden md:flex items-center gap-stack-lg font-label-md text-label-md uppercase">
+<!-- Highlight 'Explore' as active intent for landing page context -->
+<a class="text-background bg-primary px-2 py-1 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none hover:invert transition-none" href="#">
+                    Explore
+                </a>
+<a class="text-primary hover:bg-surface-variant hover:invert transition-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-none" href="#">
+                    Contributor
+                </a>
+<a class="text-primary hover:bg-surface-variant hover:invert transition-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-none" href="#">
+                    Docs
+                </a>
+</div>
+</div>
+<div class="flex items-center gap-stack-md">
+<button class="font-label-md text-label-md uppercase border-2 border-primary px-4 py-2 hover:bg-primary hover:text-background transition-none brutalist-shadow-active text-primary dark:text-primary">
+                Connect Wallet
+            </button>
+<!-- Mobile Menu Toggle -->
+<button class="md:hidden text-primary">
+<span class="material-symbols-outlined" style="font-size: 24px;">menu</span>
+</button>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-grow bg-grid-pattern relative">
+<!-- Hero Section -->
+<section class="border-b-2 border-primary pt-24 pb-32 px-gutter md:px-margin-desktop relative overflow-hidden">
+<div class="max-w-container-max mx-auto grid grid-cols-1 lg:grid-cols-12 gap-gutter relative z-10">
+<div class="col-span-1 lg:col-span-8 flex flex-col justify-center">
+<h1 class="font-display-lg text-headline-lg-mobile md:text-display-lg text-primary uppercase mb-stack-md">
+                        DECENTRALIZED COMPUTE FOR THE AI ERA.
+                    </h1>
+<p class="font-body-lg text-on-surface-variant max-w-2xl mb-stack-lg">
+                        Rent high-performance GPUs. Pay by the second in SOL. No middleman. No on-chain programs.
+                    </p>
+<div class="flex flex-col sm:flex-row gap-stack-md">
+<button class="bg-primary text-background font-label-md text-label-md uppercase px-8 py-4 border-2 border-primary brutalist-shadow brutalist-shadow-hover brutalist-shadow-active transition-none">
+                            Explore Marketplace
+                        </button>
+<button class="bg-background text-primary font-label-md text-label-md uppercase px-8 py-4 border-2 border-primary hover:bg-primary hover:text-background transition-none brutalist-shadow-active">
+                            Become a Contributor
+                        </button>
+</div>
+</div>
+<!-- Hero Visual Placeholder -->
+<div class="col-span-1 lg:col-span-4 hidden lg:flex items-center justify-center relative">
+<div class="w-full h-full min-h-[300px] border-2 border-primary brutalist-shadow bg-surface-container-low p-4 flex items-center justify-center relative overflow-hidden">
+<div class="bg-cover bg-center absolute inset-0 w-full h-full opacity-50 mix-blend-screen" data-alt="A highly complex, abstract rendering of a decentralized compute node network, visualized in strict black and white. Thick, aggressive lines connect brutalist geometric server racks floating in a dark, infinite void. The aesthetic is raw, industrial, and cyber-punk inspired, reflecting a high-contrast 'hardened terminal' environment." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC2bkS2cNRcfhFnQAsMVtG-koIoCjVcIM4TjQTom9Mwvhsw8-Zsqy-o9ydJ_QvRtP2ye68MPzTe2tzToAJaZ4HhBlvQJT5gwNzkvibzGeXz425Ib3-q4jMO849ubK3b0AvjwpIGc3oL9SNr7YP5uqasqF3eUo3-cfPZMsPVm4dzLeUgOdpMMPTCQpu-6VpKdHtIxb9dvhEPf_XG89EoJYoD9AcVaxvjQdrLUHW4VHTB5NzGIvvr31NBdUtafCxlb_8xCT7H3MlJi1B9')"></div>
+<div class="z-10 text-center">
+<span class="material-symbols-outlined text-primary" style="font-size: 64px;">dns</span>
+<div class="font-code-sm text-primary mt-2 uppercase">System_Active</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Stats Section -->
+<section class="border-b-2 border-primary bg-surface-variant">
+<div class="max-w-container-max mx-auto grid grid-cols-1 md:grid-cols-3 divide-y-2 md:divide-y-0 md:divide-x-2 divide-primary border-x-2 border-primary">
+<div class="p-gutter md:p-margin-desktop flex flex-col">
+<span class="font-code-sm text-on-surface-variant uppercase mb-2">Global Nodes</span>
+<span class="font-headline-lg text-primary">—</span>
+</div>
+<div class="p-gutter md:p-margin-desktop flex flex-col">
+<span class="font-code-sm text-on-surface-variant uppercase mb-2">Total Uptime</span>
+<span class="font-headline-lg text-primary">—</span>
+</div>
+<div class="p-gutter md:p-margin-desktop flex flex-col bg-primary text-background group cursor-pointer hover:bg-background hover:text-primary transition-colors duration-0">
+<span class="font-code-sm uppercase mb-2 group-hover:text-on-surface-variant">SOL Paid to Contributors</span>
+<span class="font-headline-lg">—</span>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer (JSON Injected) -->
+<footer class="bg-background dark:bg-background flex flex-col md:flex-row justify-between items-center px-gutter py-stack-md w-full w-full border-t-2 border-primary mt-auto">
+<div class="font-display-lg text-headline-md text-primary mb-4 md:mb-0">
+            RAVEN
+        </div>
+<div class="flex flex-wrap justify-center gap-stack-md font-code-sm text-code-sm text-primary dark:text-primary mb-4 md:mb-0">
+<a class="text-on-surface-variant hover:text-primary hover:underline transition-none" href="#">
+                Github
+            </a>
+<a class="text-on-surface-variant hover:text-primary hover:underline transition-none" href="#">
+                Discord
+            </a>
+<a class="text-on-surface-variant hover:text-primary hover:underline transition-none" href="#">
+                X
+            </a>
+<a class="text-on-surface-variant hover:text-primary hover:underline transition-none" href="#">
+                Whitepaper
+            </a>
+</div>
+<div class="font-code-sm text-code-sm text-primary dark:text-primary text-center md:text-right">
+            © 2024 RAVEN COMPUTE PROTOCOL. ALL RIGHTS RESERVED.
+        </div>
+</footer>
+
+
+</body></html>
