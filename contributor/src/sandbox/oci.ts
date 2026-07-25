@@ -45,18 +45,26 @@ export async function ensureImage(image: string, context: string) {
   built.add(image);
 }
 
-/** bore prints "listening at bore.pub:PORT" once the remote port is assigned. The sandbox publishes
- *  port 22 on the host, so the tunnel forwards to the host itself via `host.docker.internal`. */
-export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number): Promise<{ host: string; port: number }> {
+/**
+ * bore prints "listening at bore.pub:PORT" once the remote port is assigned.
+ *
+ * The tunnel container joins the SANDBOX's network namespace (`--network container:…`), so sshd is
+ * simply 127.0.0.1:22 to it. The previous shape — publish port 22 on the host, then forward to
+ * `host.docker.internal` — needs traffic from the Docker bridge back into a host port, which Ubuntu's
+ * default ufw rules silently drop. The buyer then sees the tunnel connect and every SSH attempt reset.
+ * Sharing the namespace removes that hop, and with it the host port: nothing about the sandbox is
+ * exposed on the contributor's machine at all.
+ */
+export async function boreTunnel(cfg: OciConfig, leaseId: string): Promise<{ host: string; port: number }> {
   await run('docker', [
     'run', '-d', '--name', tunnelBox(leaseId),
     '--label', `${LEASE_LABEL}=${leaseId}`,
     '--label', 'raven.role=tunnel',
-    '--add-host=host.docker.internal:host-gateway',
+    '--network', `container:${box(leaseId)}`,
     // -e, not --secret: an argv secret is visible to every user on the host via `docker inspect`/ps.
     ...(cfg.boreSecret ? ['-e', `BORE_SECRET=${cfg.boreSecret}`] : []),
-    'ekzhang/bore', 'local', String(port),
-    '--local-host', 'host.docker.internal',
+    'ekzhang/bore', 'local', '22',
+    '--local-host', '127.0.0.1',
     '--to', cfg.boreServer,
   ]);
   for (let i = 0; i < 30; i++) {
@@ -99,6 +107,12 @@ async function waitForSshd(name: string, timeoutMs = 30_000): Promise<void> {
   throw new Error(`sandbox sshd did not come up within ${timeoutMs / 1000}s`);
 }
 
+/** The host port Docker mapped to the sandbox's 22 — only meaningful in TUNNEL_MODE=local. */
+async function publishedPort(name: string): Promise<number> {
+  const { stdout } = await run('docker', ['port', name, '22']);
+  return Number(stdout.trim().split('\n')[0].split(':').pop());
+}
+
 /** Runs the sandbox container, waits for sshd, wires the tunnel, returns a handle.
  *
  *  Hardened as far as this image allows: no host filesystem, no new privileges, capped CPU/RAM/PIDs.
@@ -110,10 +124,11 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
     'run', '-d', '--name', name,
     '--label', `${LEASE_LABEL}=${spec.leaseId}`,
     '--label', 'raven.role=sandbox',
-    // Deliberately NO restart policy. `-p 0:22` picks a random host port, so a restart would land on
-    // a different one and orphan the tunnel — and it would resurrect the container after start.sh's
-    // TTL self-destruct, breaking the guarantee that a sandbox never outlives its lease.
-    '-p', '0:22',
+    // Deliberately NO restart policy: a restart would resurrect the container after start.sh's TTL
+    // self-destruct, breaking the guarantee that a sandbox never outlives its lease.
+    // Port 22 is published on the host ONLY for TUNNEL_MODE=local; in bore mode the tunnel shares
+    // this container's network namespace instead, so nothing is exposed on the host.
+    ...(cfg.tunnelMode === 'local' ? ['-p', '0:22'] : []),
     '--cpus', String(spec.cpuCores),
     '--memory', `${spec.memMib}m`,
     '--pids-limit', '512',
@@ -129,9 +144,10 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
   ]);
   // Gate on readiness BEFORE opening the tunnel: no point publishing a port nothing answers on.
   await waitForSshd(name);
-  const { stdout } = await run('docker', ['port', name, '22']);
-  const hostPort = Number(stdout.trim().split('\n')[0].split(':').pop());
-  const where = cfg.tunnelMode === 'bore' ? await boreTunnel(cfg, spec.leaseId, hostPort) : { host: lanIp(), port: hostPort };
+  const where =
+    cfg.tunnelMode === 'bore'
+      ? await boreTunnel(cfg, spec.leaseId)
+      : { host: lanIp(), port: await publishedPort(name) };
   return {
     leaseId: spec.leaseId,
     sshHost: where.host,
@@ -141,7 +157,10 @@ export async function runContainer(cfg: OciConfig, spec: SandboxSpec): Promise<S
 }
 
 export async function destroyContainer(leaseId: string): Promise<void> {
-  for (const name of [box(leaseId), tunnelBox(leaseId)]) {
+  // Tunnel FIRST, and not in parallel: it shares the sandbox's network namespace, and Docker refuses
+  // to remove a container while another is attached to its netns. Reversed, the sandbox removal fails
+  // — silently, since these are best-effort — and the buyer keeps a free machine forever.
+  for (const name of [tunnelBox(leaseId), box(leaseId)]) {
     await run('docker', ['rm', '-f', name]).catch(() => {});
   }
 }
