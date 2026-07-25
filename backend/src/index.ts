@@ -42,6 +42,12 @@ const OFFLINE_AFTER_MS = 20_000;
 // Off by default: SSH is key-only. The wallet-address password is guessable from any explorer.
 const ALLOW_PASSWORD_SSH = process.env.ALLOW_PASSWORD_SSH === 'true';
 const MAX_LEASE_TTL_S = Number(process.env.MAX_LEASE_TTL_S ?? 86_400); // guest self-destruct cap
+// The tunnel relay every lease's SSH port is published through. Handed to each daemon at register
+// time (over its authenticated RAVEN_KEY call) rather than configured per contributor: the operator
+// controls where buyer traffic flows, and the secret never reaches the public web bundle.
+// Unset BORE_SERVER = fall back to the public bore.pub, which is fine for a demo and not for real use.
+const BORE_SERVER = process.env.BORE_SERVER ?? '';
+const BORE_SECRET = process.env.BORE_SECRET ?? '';
 
 type Node = {
   id: string;
@@ -281,7 +287,11 @@ app.post('/nodes/register', requireContributorKey, (req, res) => {
   };
   nodes.set(node.id, node);
   console.log(`node ${node.id} registered (${node.label}, ${node.cpus} cpu, ${node.memMb}MB)`);
-  res.json({ nodeId: node.id });
+  // The daemon prefers this over its own BORE_SERVER, so contributors need no tunnel config at all.
+  res.json({
+    nodeId: node.id,
+    tunnel: BORE_SERVER ? { server: BORE_SERVER, secret: BORE_SECRET || undefined } : undefined,
+  });
 });
 
 // A daemon may only touch a node whose payout matches its own key (ties node ops to the minting key).

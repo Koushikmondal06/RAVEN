@@ -35,7 +35,7 @@ Your node appears in the marketplace's Explore table within ~10 seconds. Get the
 | Need | Why | Notes |
 |---|---|---|
 | **Docker** | the daemon and every lease run as containers | `docker ps` must work; Compose v2 (`docker compose`) or v1 (`docker-compose`) |
-| **Outbound internet** | each lease's SSH port is published over a [bore](https://github.com/ekzhang/bore) tunnel | no inbound ports to open |
+| **Outbound internet** | each lease's SSH port is published over a [bore](https://github.com/ekzhang/bore) tunnel to the marketplace's relay | no inbound ports to open; the registry tells your daemon which relay to use |
 | **`RAVEN_KEY` + backend URL** | authenticates the node; where payouts go | key from the web app (Step 1); URL from the marketplace operator |
 
 Linux is the sane host. macOS works for development through Docker Desktop or Colima, but the SSH
@@ -112,7 +112,8 @@ Only `RAVEN_KEY` and `REGISTRY_URL` are required. Defaults shown.
 | `SHARE_CPUS` | cores − 1 | CPUs per lease |
 | `SHARE_MEM_MB` | half of RAM | memory per lease |
 | `TUNNEL_MODE` | `bore` | `bore` = outbound tunnel, no inbound ports; `local` = reach the container's published port directly (same host/LAN only) |
-| `BORE_SERVER` | `bore.pub` | bore relay for `TUNNEL_MODE=bore` |
+| `BORE_SERVER` | `bore.pub` | **fallback only** — the registry pushes its own relay at register time and that wins. Set this only when running against a registry that has none. |
+| `BORE_SECRET` | — | ditto; the registry supplies it for its own relay |
 | `REAP_INTERVAL_MS` | `60000` | orphan-sandbox reaper period |
 | `KILL_PORT` | `4999` | local-only kill switch port |
 

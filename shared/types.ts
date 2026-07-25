@@ -9,6 +9,10 @@ export type NodeInfo = {
   busy: boolean;
 };
 
+/** Registry -> daemon at register time: which tunnel relay to publish lease SSH ports through.
+ *  Sent only over the daemon's authenticated RAVEN_KEY call, so `secret` never reaches a browser. */
+export type TunnelConfig = { server: string; secret?: string };
+
 export type LeaseStatus = 'starting' | 'active' | 'ended';
 
 export type LeaseInfo = {

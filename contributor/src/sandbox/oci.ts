@@ -20,6 +20,7 @@ export type OciConfig = {
   imageContext: string;
   tunnelMode: string; // bore | local
   boreServer: string;
+  boreSecret?: string; // required by a private relay; unset for the public bore.pub
 };
 
 /** Env handed to the sandbox: SSH key, optional legacy password, guest self-destruct TTL. */
@@ -45,6 +46,8 @@ export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number):
   await run('docker', [
     'run', '-d', '--name', tunnelBox(leaseId),
     '--add-host=host.docker.internal:host-gateway',
+    // -e, not --secret: an argv secret is visible to every user on the host via `docker inspect`/ps.
+    ...(cfg.boreSecret ? ['-e', `BORE_SECRET=${cfg.boreSecret}`] : []),
     'ekzhang/bore', 'local', String(port),
     '--local-host', 'host.docker.internal',
     '--to', cfg.boreServer,
@@ -53,9 +56,13 @@ export async function boreTunnel(cfg: OciConfig, leaseId: string, port: number):
     const { stdout, stderr } = await run('docker', ['logs', tunnelBox(leaseId)]);
     const match = `${stdout}${stderr}`.match(/listening at \S+?:(\d+)/);
     if (match) return { host: cfg.boreServer, port: Number(match[1]) };
+    // A wrong/missing secret makes bore exit immediately — say so instead of timing out silently.
+    if (/(unauthorized|invalid secret|incorrect secret)/i.test(`${stdout}${stderr}`)) {
+      throw new Error(`bore rejected the tunnel to ${cfg.boreServer} — check BORE_SECRET on the registry`);
+    }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error('bore never reported a remote port');
+  throw new Error(`bore never reported a remote port (relay ${cfg.boreServer})`);
 }
 
 /** Runs the sandbox container, wires the tunnel, returns a handle.

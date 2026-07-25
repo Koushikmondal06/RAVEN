@@ -2,7 +2,7 @@ import '../../shared/env.js';
 
 import http from 'node:http';
 import os from 'node:os';
-import type { NodeCommand } from '../../shared/types.js';
+import type { NodeCommand, TunnelConfig } from '../../shared/types.js';
 import { type SandboxHandle, destroyContainer, listContainers, runContainer } from './sandbox/index.js';
 import { reap } from './sandbox/reaper.js';
 
@@ -13,7 +13,10 @@ const REGISTRY_URL = process.env.REGISTRY_URL ?? 'http://localhost:4000';
 const RAVEN_KEY = process.env.RAVEN_KEY ?? '';
 const RATE = process.env.RATE_LAMPORTS_PER_HOUR ?? '50000000'; // 0.05 SOL/hour
 const TUNNEL_MODE = process.env.TUNNEL_MODE ?? 'bore'; // bore | local
+// Fallback only. The registry normally pushes its own relay at register time (see register()), so a
+// contributor doesn't configure tunnelling at all — and buyer traffic stays off the public bore.pub.
 const BORE_SERVER = process.env.BORE_SERVER ?? 'bore.pub';
+const BORE_SECRET = process.env.BORE_SECRET;
 const LABEL = process.env.NODE_LABEL ?? os.hostname();
 const CPUS = Number(process.env.SHARE_CPUS ?? Math.max(1, os.cpus().length - 1));
 const MEM_MB = Number(process.env.SHARE_MEM_MB ?? Math.floor(os.totalmem() / 2 / 1024 / 1024));
@@ -50,11 +53,13 @@ async function post(path: string, body: unknown) {
   return res.json() as Promise<any>;
 }
 
+// Mutable: register() overwrites the relay with whatever the registry hands back.
 const sandboxCfg = {
   image: IMAGE,
   imageContext: new URL('../sandbox', import.meta.url).pathname,
   tunnelMode: TUNNEL_MODE,
   boreServer: BORE_SERVER,
+  boreSecret: BORE_SECRET,
 };
 
 // leaseId -> live handle, so stop() and the reaper have what they need to tear a sandbox down.
@@ -101,13 +106,18 @@ http
 async function register(): Promise<string> {
   for (let attempt = 1; ; attempt++) {
     try {
-      const { nodeId } = await post('/nodes/register', {
+      const { nodeId, tunnel } = (await post('/nodes/register', {
         label: LABEL,
         cpus: CPUS,
         memMb: MEM_MB,
         rateLamportsPerHour: RATE,
-      });
-      return nodeId as string;
+      })) as { nodeId: string; tunnel?: TunnelConfig };
+      // The operator's relay wins over this box's env: they own where buyer traffic flows.
+      if (tunnel?.server) {
+        sandboxCfg.boreServer = tunnel.server;
+        sandboxCfg.boreSecret = tunnel.secret;
+      }
+      return nodeId;
     } catch (e) {
       console.error(`registration failed (attempt ${attempt}): ${(e as Error).message}`);
       await new Promise((r) => setTimeout(r, 10_000));
@@ -117,8 +127,15 @@ async function register(): Promise<string> {
 
 const nodeId = await register();
 console.log(
-  `registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour`,
+  `registered with ${REGISTRY_URL} as ${nodeId} — ${CPUS} cpu, ${MEM_MB}MB at ${RATE} lamports/hour ` +
+    `(tunnel via ${sandboxCfg.boreServer}${sandboxCfg.boreSecret ? ', authenticated' : ''})`,
 );
+if (TUNNEL_MODE === 'bore' && sandboxCfg.boreServer === 'bore.pub') {
+  console.warn(
+    'WARNING: publishing lease SSH ports through the PUBLIC bore.pub relay — every buyer session ' +
+      'transits a third party. The registry should set BORE_SERVER (and BORE_SECRET) to its own relay.',
+  );
+}
 
 // Reap orphans left by a previous daemon run, then on a timer — leases are in-memory, so a sandbox
 // the registry forgot (restart, crash) would otherwise run forever.
