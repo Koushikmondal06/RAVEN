@@ -42,6 +42,10 @@ function Onboard({ auth }: { auth: Auth }) {
       <code>{key}</code>
       <h2 style={{ marginTop: '1.5rem' }}>Run the daemon</h2>
       <code>{cmd}</code>
+      <p className="sub err">
+        Warning: mounting the Docker socket gives this container host root. Fine for a local demo; for
+        a real machine run the daemon natively under systemd instead (see contributor/docs/daemon-isolation.md).
+      </p>
       <div className="row" style={{ marginTop: '0.75rem' }}>
         <button
           onClick={() => {
